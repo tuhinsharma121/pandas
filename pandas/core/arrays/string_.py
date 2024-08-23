@@ -659,11 +659,10 @@ class StringArray(BaseStringArray, NumpyExtensionArray):  # type: ignore[misc]
         values[self.isna()] = None
         return pa.array(values, type=type, from_pandas=True)
 
-    def _values_for_factorize(self) -> tuple[np.ndarray, None]:
+    def _values_for_factorize(self) -> tuple[np.ndarray, libmissing.NAType | float]:  # type: ignore[override]
         arr = self._ndarray.copy()
-        mask = self.isna()
-        arr[mask] = None
-        return arr, None
+
+        return arr, self.dtype.na_value
 
     def __setitem__(self, key, value) -> None:
         value = extract_array(value, extract_numpy=True)
@@ -848,12 +847,6 @@ class StringArray(BaseStringArray, NumpyExtensionArray):  # type: ignore[misc]
 
     _arith_method = _cmp_method
 
-    # ------------------------------------------------------------------------
-    # String methods interface
-    # error: Incompatible types in assignment (expression has type "NAType",
-    # base class "NumpyExtensionArray" defined the type as "float")
-    _str_na_value = libmissing.NA  # type: ignore[assignment]
-
 
 class StringArrayNumpySemantics(StringArray):
     _storage = "python"
@@ -879,12 +872,3 @@ class StringArrayNumpySemantics(StringArray):
         if dtype is None:
             dtype = StringDtype(storage="python", na_value=np.nan)
         return super()._from_sequence(scalars, dtype=dtype, copy=copy)
-
-    def _from_backing_data(self, arr: np.ndarray) -> StringArrayNumpySemantics:
-        # need to override NumpyExtensionArray._from_backing_data to ensure
-        # we always preserve the dtype
-        return NDArrayBacked._from_backing_data(self, arr)
-
-    # ------------------------------------------------------------------------
-    # String methods interface
-    _str_na_value = np.nan
