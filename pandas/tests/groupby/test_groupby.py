@@ -6,8 +6,6 @@ import re
 import numpy as np
 import pytest
 
-from pandas._config import using_string_dtype
-
 from pandas.errors import SpecificationError
 import pandas.util._test_decorators as td
 
@@ -66,11 +64,9 @@ def test_groupby_nonobject_dtype_mixed():
     def max_value(group):
         return group.loc[group["value"].idxmax()]
 
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        applied = df.groupby("A").apply(max_value)
+    applied = df.groupby("A").apply(max_value)
     result = applied.dtypes
-    expected = df.dtypes
+    expected = df.drop(columns="A").dtypes
     tm.assert_series_equal(result, expected)
 
 
@@ -229,11 +225,8 @@ def test_indices_concatenation_order():
     df2 = DataFrame({"a": [3, 2, 2, 2], "b": range(4), "c": range(5, 9)})
 
     # correct result
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result1 = df.groupby("a").apply(f1)
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result2 = df2.groupby("a").apply(f1)
+    result1 = df.groupby("a").apply(f1)
+    result2 = df2.groupby("a").apply(f1)
     tm.assert_frame_equal(result1, result2)
 
     # should fail (not the same number of levels)
@@ -271,7 +264,7 @@ def test_attr_wrapper(ts):
     # make sure raises error
     msg = "'SeriesGroupBy' object has no attribute 'foo'"
     with pytest.raises(AttributeError, match=msg):
-        getattr(grouped, "foo")
+        grouped.foo
 
 
 def test_frame_groupby(tsframe):
@@ -1055,17 +1048,13 @@ def test_groupby_name_propagation(df):
         # Provide a different name for each Series.  In this case, groupby
         # should not attempt to propagate the Series name since they are
         # inconsistent.
-        return Series({"count": 1, "mean": 2, "omissions": 3}, name=df.iloc[0]["A"])
+        return Series({"count": 1, "mean": 2, "omissions": 3}, name=df.iloc[0]["C"])
 
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        metrics = df.groupby("A").apply(summarize)
+    metrics = df.groupby("A").apply(summarize)
     assert metrics.columns.name is None
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        metrics = df.groupby("A").apply(summarize, "metrics")
+    metrics = df.groupby("A").apply(summarize, "metrics")
     assert metrics.columns.name == "metrics"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        metrics = df.groupby("A").apply(summarize_random_name)
+    metrics = df.groupby("A").apply(summarize_random_name)
     assert metrics.columns.name is None
 
 
@@ -1281,7 +1270,6 @@ def test_groupby_two_group_keys_all_nan():
     assert result == {}
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)")
 def test_groupby_2d_malformed():
     d = DataFrame(index=range(2))
     d["group"] = ["g1", "g2"]
@@ -1362,10 +1350,8 @@ def test_dont_clobber_name_column():
         {"key": ["a", "a", "a", "b", "b", "b"], "name": ["foo", "bar", "baz"] * 2}
     )
 
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = df.groupby("key", group_keys=False).apply(lambda x: x)
-    tm.assert_frame_equal(result, df)
+    result = df.groupby("key", group_keys=False).apply(lambda x: x)
+    tm.assert_frame_equal(result, df[["name"]])
 
 
 def test_skip_group_keys():
@@ -1442,9 +1428,7 @@ def test_set_group_name(df, grouper):
     grouped = df.groupby(grouper, group_keys=False)
 
     # make sure all these work
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        grouped.apply(f)
+    grouped.apply(f)
     grouped.aggregate(freduce)
     grouped.aggregate({"C": freduce, "D": freduce})
     grouped.transform(f)
@@ -1465,10 +1449,7 @@ def test_group_name_available_in_inference_pass():
         names.append(group.name)
         return group.copy()
 
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        df.groupby("a", sort=False, group_keys=False).apply(f)
-
+    df.groupby("a", sort=False, group_keys=False).apply(f)
     expected_names = [0, 1, 2]
     assert names == expected_names
 
@@ -1673,9 +1654,7 @@ def test_groupby_preserves_sort(sort_column, group_column):
     def test_sort(x):
         tm.assert_frame_equal(x, x.sort_values(by=sort_column))
 
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        g.apply(test_sort)
+    g.apply(test_sort)
 
 
 def test_pivot_table_values_key_error():
@@ -1729,7 +1708,7 @@ def test_pivot_table_values_key_error():
 )
 @pytest.mark.parametrize("method", ["attr", "agg", "apply"])
 @pytest.mark.parametrize(
-    "op", ["idxmax", "idxmin", "min", "max", "sum", "prod", "skew"]
+    "op", ["idxmax", "idxmin", "min", "max", "sum", "prod", "skew", "kurt"]
 )
 def test_empty_groupby(columns, keys, values, method, op, dropna, using_infer_string):
     # GH8093 & GH26411
@@ -1805,7 +1784,7 @@ def test_empty_groupby(columns, keys, values, method, op, dropna, using_infer_st
             tm.assert_equal(result, expected)
         return
 
-    if op in ["prod", "sum", "skew"]:
+    if op in ["prod", "sum", "skew", "kurt"]:
         # ops that require more than just ordered-ness
         if is_dt64 or is_cat or is_per or (is_str and op != "sum"):
             # GH#41291
@@ -1818,15 +1797,15 @@ def test_empty_groupby(columns, keys, values, method, op, dropna, using_infer_st
                 msg = f"dtype 'str' does not support operation '{op}'"
             else:
                 msg = "category type does not support"
-            if op == "skew":
-                msg = "|".join([msg, "does not support operation 'skew'"])
+            if op in ["skew", "kurt"]:
+                msg = "|".join([msg, f"does not support operation '{op}'"])
             with pytest.raises(TypeError, match=msg):
                 get_result()
 
             if not isinstance(columns, list):
                 # i.e. SeriesGroupBy
                 return
-            elif op == "skew":
+            elif op in ["skew", "kurt"]:
                 # TODO: test the numeric_only=True case
                 return
             else:
@@ -1861,10 +1840,8 @@ def test_empty_groupby_apply_nonunique_columns():
     df[3] = df[3].astype(np.int64)
     df.columns = [0, 1, 2, 0]
     gb = df.groupby(df[1], group_keys=False)
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        res = gb.apply(lambda x: x)
-    assert (res.dtypes == df.dtypes).all()
+    res = gb.apply(lambda x: x)
+    assert (res.dtypes == df.drop(columns=1).dtypes).all()
 
 
 def test_tuple_as_grouping():
@@ -2099,36 +2076,14 @@ def test_group_on_empty_multiindex(transformation_func, request):
     df["col_3"] = df["col_3"].astype(int)
     df["col_4"] = df["col_4"].astype(int)
     df = df.set_index(["col_1", "col_2"])
-    if transformation_func == "fillna":
-        args = ("ffill",)
-    else:
-        args = ()
-    warn = FutureWarning if transformation_func == "fillna" else None
-    warn_msg = "DataFrameGroupBy.fillna is deprecated"
-    with tm.assert_produces_warning(warn, match=warn_msg):
-        result = df.iloc[:0].groupby(["col_1"]).transform(transformation_func, *args)
-    with tm.assert_produces_warning(warn, match=warn_msg):
-        expected = df.groupby(["col_1"]).transform(transformation_func, *args).iloc[:0]
+    result = df.iloc[:0].groupby(["col_1"]).transform(transformation_func)
+    expected = df.groupby(["col_1"]).transform(transformation_func).iloc[:0]
     if transformation_func in ("diff", "shift"):
         expected = expected.astype(int)
     tm.assert_equal(result, expected)
 
-    warn_msg = "SeriesGroupBy.fillna is deprecated"
-    with tm.assert_produces_warning(warn, match=warn_msg):
-        result = (
-            df["col_3"]
-            .iloc[:0]
-            .groupby(["col_1"])
-            .transform(transformation_func, *args)
-        )
-    warn_msg = "SeriesGroupBy.fillna is deprecated"
-    with tm.assert_produces_warning(warn, match=warn_msg):
-        expected = (
-            df["col_3"]
-            .groupby(["col_1"])
-            .transform(transformation_func, *args)
-            .iloc[:0]
-        )
+    result = df["col_3"].iloc[:0].groupby(["col_1"]).transform(transformation_func)
+    expected = df["col_3"].groupby(["col_1"]).transform(transformation_func).iloc[:0]
     if transformation_func in ("diff", "shift"):
         expected = expected.astype(int)
     tm.assert_equal(result, expected)
@@ -2345,7 +2300,6 @@ def test_groupby_all_nan_groups_drop():
     tm.assert_series_equal(result, expected)
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)", strict=False)
 @pytest.mark.parametrize("numeric_only", [True, False])
 def test_groupby_empty_multi_column(as_index, numeric_only):
     # GH 15106 & GH 41998
@@ -2354,7 +2308,7 @@ def test_groupby_empty_multi_column(as_index, numeric_only):
     result = gb.sum(numeric_only=numeric_only)
     if as_index:
         index = MultiIndex([[], []], [[], []], names=["A", "B"])
-        columns = ["C"] if not numeric_only else []
+        columns = ["C"] if not numeric_only else Index([], dtype="str")
     else:
         index = RangeIndex(0)
         columns = ["A", "B", "C"] if not numeric_only else ["A", "B"]
@@ -2362,7 +2316,6 @@ def test_groupby_empty_multi_column(as_index, numeric_only):
     tm.assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)")
 def test_groupby_aggregation_non_numeric_dtype():
     # GH #43108
     df = DataFrame(
@@ -2373,7 +2326,7 @@ def test_groupby_aggregation_non_numeric_dtype():
         {
             "v": [[1, 1], [10, 20]],
         },
-        index=Index(["M", "W"], dtype="object", name="MW"),
+        index=Index(["M", "W"], name="MW"),
     )
 
     gb = df.groupby(by=["MW"])
@@ -2481,25 +2434,28 @@ def test_rolling_wrong_param_min_period():
 
 def test_by_column_values_with_same_starting_value(any_string_dtype):
     # GH29635
+    dtype = any_string_dtype
     df = DataFrame(
         {
             "Name": ["Thomas", "Thomas", "Thomas John"],
             "Credit": [1200, 1300, 900],
-            "Mood": Series(["sad", "happy", "happy"], dtype=any_string_dtype),
+            "Mood": Series(["sad", "happy", "happy"], dtype=dtype),
         }
     )
     aggregate_details = {"Mood": Series.mode, "Credit": "sum"}
 
     result = df.groupby(["Name"]).agg(aggregate_details)
-    expected_result = DataFrame(
+    expected = DataFrame(
         {
             "Mood": [["happy", "sad"], "happy"],
             "Credit": [2500, 900],
             "Name": ["Thomas", "Thomas John"],
-        }
+        },
     ).set_index("Name")
-
-    tm.assert_frame_equal(result, expected_result)
+    if getattr(dtype, "storage", None) == "pyarrow":
+        mood_values = pd.array(["happy", "sad"], dtype=dtype)
+        expected["Mood"] = [mood_values, "happy"]
+    tm.assert_frame_equal(result, expected)
 
 
 def test_groupby_none_in_first_mi_level():
@@ -2513,12 +2469,13 @@ def test_groupby_none_in_first_mi_level():
     tm.assert_series_equal(result, expected)
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)")
-def test_groupby_none_column_name():
+def test_groupby_none_column_name(using_infer_string):
     # GH#47348
     df = DataFrame({None: [1, 1, 2, 2], "b": [1, 1, 2, 3], "c": [4, 5, 6, 7]})
-    result = df.groupby(by=[None]).sum()
-    expected = DataFrame({"b": [2, 5], "c": [9, 13]}, index=Index([1, 2], name=None))
+    by = [np.nan] if using_infer_string else [None]
+    gb = df.groupby(by=by)
+    result = gb.sum()
+    expected = DataFrame({"b": [2, 5], "c": [9, 13]}, index=Index([1, 2], name=by[0]))
     tm.assert_frame_equal(result, expected)
 
 
@@ -3024,3 +2981,21 @@ def test_groupby_multi_index_codes():
 
     index = df_grouped.index
     tm.assert_index_equal(index, MultiIndex.from_frame(index.to_frame()))
+
+
+def test_groupby_datetime_with_nat():
+    # GH##35202
+    df = DataFrame(
+        {
+            "a": [
+                to_datetime("2019-02-12"),
+                to_datetime("2019-02-12"),
+                to_datetime("2019-02-13"),
+                pd.NaT,
+            ],
+            "b": [1, 2, 3, 4],
+        }
+    )
+    grouped = df.groupby("a", dropna=False)
+    result = len(grouped)
+    assert result == 3

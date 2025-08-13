@@ -81,6 +81,10 @@ def array(
     """
     Create an array.
 
+    This method constructs an array using pandas extension types when possible.
+    If `dtype` is specified, it determines the type of array returned. Otherwise,
+    pandas attempts to infer the appropriate dtype based on `data`.
+
     Parameters
     ----------
     data : Sequence of objects
@@ -172,9 +176,9 @@ def array(
     NumPy array.
 
     >>> pd.array(["a", "b"], dtype=str)
-    <NumpyExtensionArray>
+    <ArrowStringArrayNumpySemantics>
     ['a', 'b']
-    Length: 2, dtype: str32
+    Length: 2, dtype: str
 
     This would instead return the new ExtensionArray dedicated for string
     data. If you really need the new array to be backed by a  NumPy array,
@@ -246,7 +250,7 @@ def array(
 
     >>> pd.array(["a", "b", "a"], dtype="category")
     ['a', 'b', 'a']
-    Categories (2, object): ['a', 'b']
+    Categories (2, str): ['a', 'b']
 
     Or specify the actual dtype
 
@@ -254,7 +258,7 @@ def array(
     ...     ["a", "b", "a"], dtype=pd.CategoricalDtype(["a", "b", "c"], ordered=True)
     ... )
     ['a', 'b', 'a']
-    Categories (3, object): ['a' < 'b' < 'c']
+    Categories (3, str): ['a' < 'b' < 'c']
 
     If pandas does not infer a dedicated extension type a
     :class:`arrays.NumpyExtensionArray` is returned.
@@ -450,7 +454,7 @@ def extract_array(
     --------
     >>> extract_array(pd.Series(["a", "b", "c"], dtype="category"))
     ['a', 'b', 'c']
-    Categories (3, object): ['a', 'b', 'c']
+    Categories (3, str): ['a', 'b', 'c']
 
     Other objects like lists, arrays, and DataFrames are just passed through.
 
@@ -596,6 +600,8 @@ def sanitize_array(
         # create an extension array from its dtype
         _sanitize_non_ordered(data)
         cls = dtype.construct_array_type()
+        if not hasattr(data, "__array__"):
+            data = list(data)
         subarr = cls._from_sequence(data, dtype=dtype, copy=copy)
 
     # GH#846

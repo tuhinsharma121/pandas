@@ -20,6 +20,7 @@ from pandas.core.dtypes.missing import remove_na_arraylike
 
 import pandas as pd
 import pandas.core.common as com
+from pandas.util.version import Version
 
 from pandas.io.formats.printing import pprint_thing
 from pandas.plotting._matplotlib.core import (
@@ -54,7 +55,8 @@ def _set_ticklabels(ax: Axes, labels: list[str], is_vertical: bool, **kwargs) ->
     ticks = ax.get_xticks() if is_vertical else ax.get_yticks()
     if len(ticks) != len(labels):
         i, remainder = divmod(len(ticks), len(labels))
-        assert remainder == 0, remainder
+        if Version(mpl.__version__) < Version("3.10"):
+            assert remainder == 0, remainder
         labels *= i
     if is_vertical:
         ax.set_xticklabels(labels, **kwargs)
@@ -121,8 +123,7 @@ class BoxPlot(LinePlot):
 
         if colormap is not None:
             warnings.warn(
-                "'color' and 'colormap' cannot be used "
-                "simultaneously. Using 'color'",
+                "'color' and 'colormap' cannot be used simultaneously. Using 'color'",
                 stacklevel=find_stack_level(),
             )
 
@@ -189,7 +190,8 @@ class BoxPlot(LinePlot):
 
     def _make_plot(self, fig: Figure) -> None:
         if self.subplots:
-            self._return_obj = pd.Series(dtype=object)
+            obj_axes = []
+            obj_labels = []
 
             # Re-create iterated data if `by` is assigned by users
             data = (
@@ -220,10 +222,12 @@ class BoxPlot(LinePlot):
                     ax, y, column_num=i, return_type=self.return_type, **kwds
                 )
                 self.maybe_color_bp(bp)
-                self._return_obj[label] = ret
+                obj_axes.append(ret)
+                obj_labels.append(label)
                 _set_ticklabels(
                     ax=ax, labels=ticklabels, is_vertical=self.orientation == "vertical"
                 )
+            self._return_obj = pd.Series(obj_axes, index=obj_labels, dtype=object)
         else:
             y = self.data.values.T
             ax = self._get_ax(0)
@@ -399,7 +403,7 @@ def boxplot(
             ax.set_ylabel(pprint_thing(ylabel))
 
         keys = [pprint_thing(x) for x in keys]
-        values = [np.asarray(remove_na_arraylike(v), dtype=object) for v in values]
+        values = [remove_na_arraylike(v) for v in values]
         bp = ax.boxplot(values, **kwds)
         if fontsize is not None:
             ax.tick_params(axis="both", labelsize=fontsize)

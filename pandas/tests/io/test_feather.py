@@ -6,7 +6,10 @@ import zoneinfo
 import numpy as np
 import pytest
 
-from pandas.compat.pyarrow import pa_version_under18p0
+from pandas.compat.pyarrow import (
+    pa_version_under18p0,
+    pa_version_under19p0,
+)
 
 import pandas as pd
 import pandas._testing as tm
@@ -140,8 +143,8 @@ class TestFeather:
     def test_path_pathlib(self):
         df = pd.DataFrame(
             1.1 * np.arange(120).reshape((30, 4)),
-            columns=pd.Index(list("ABCD"), dtype=object),
-            index=pd.Index([f"i-{i}" for i in range(30)], dtype=object),
+            columns=pd.Index(list("ABCD")),
+            index=pd.Index([f"i-{i}" for i in range(30)]),
         ).reset_index()
         result = tm.round_trip_pathlib(df.to_feather, read_feather)
         tm.assert_frame_equal(df, result)
@@ -170,9 +173,9 @@ class TestFeather:
         # GH#50765
         df = pd.DataFrame(
             {
-                "a": pd.Series([1, np.nan, 3], dtype="Int64"),
+                "a": pd.Series([1, pd.NA, 3], dtype="Int64"),
                 "b": pd.Series([1, 2, 3], dtype="Int64"),
-                "c": pd.Series([1.5, np.nan, 2.5], dtype="Float64"),
+                "c": pd.Series([1.5, pd.NA, 2.5], dtype="Float64"),
                 "d": pd.Series([1.5, 2.0, 2.5], dtype="Float64"),
                 "e": [True, False, None],
                 "f": [True, False, True],
@@ -197,9 +200,9 @@ class TestFeather:
 
         expected = pd.DataFrame(
             {
-                "a": pd.Series([1, np.nan, 3], dtype="Int64"),
+                "a": pd.Series([1, pd.NA, 3], dtype="Int64"),
                 "b": pd.Series([1, 2, 3], dtype="Int64"),
-                "c": pd.Series([1.5, np.nan, 2.5], dtype="Float64"),
+                "c": pd.Series([1.5, pd.NA, 2.5], dtype="Float64"),
                 "d": pd.Series([1.5, 2.0, 2.5], dtype="Float64"),
                 "e": pd.Series([True, False, pd.NA], dtype="boolean"),
                 "f": pd.Series([True, False, True], dtype="boolean"),
@@ -239,15 +242,26 @@ class TestFeather:
             with pytest.raises(ValueError, match=msg):
                 read_feather(path, dtype_backend="numpy")
 
-    def test_string_inference(self, tmp_path):
+    def test_string_inference(self, tmp_path, using_infer_string):
         # GH#54431
         path = tmp_path / "test_string_inference.p"
         df = pd.DataFrame(data={"a": ["x", "y"]})
         df.to_feather(path)
         with pd.option_context("future.infer_string", True):
             result = read_feather(path)
+        dtype = pd.StringDtype(na_value=np.nan)
         expected = pd.DataFrame(
             data={"a": ["x", "y"]}, dtype=pd.StringDtype(na_value=np.nan)
+        )
+        expected = pd.DataFrame(
+            data={"a": ["x", "y"]},
+            dtype=dtype,
+            columns=pd.Index(
+                ["a"],
+                dtype=object
+                if pa_version_under19p0 and not using_infer_string
+                else dtype,
+            ),
         )
         tm.assert_frame_equal(result, expected)
 

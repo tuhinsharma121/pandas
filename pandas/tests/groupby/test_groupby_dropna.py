@@ -1,9 +1,8 @@
 import numpy as np
 import pytest
 
-from pandas._config import using_string_dtype
-
-from pandas.compat.pyarrow import pa_version_under10p1
+from pandas.errors import Pandas4Warning
+import pandas.util._test_decorators as td
 
 from pandas.core.dtypes.missing import na_value_for_dtype
 
@@ -99,7 +98,6 @@ def test_groupby_dropna_multi_index_dataframe_nan_in_two_groups(
     tm.assert_frame_equal(grouped, expected)
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)", strict=False)
 @pytest.mark.parametrize(
     "dropna, idx, outputs",
     [
@@ -126,7 +124,7 @@ def test_groupby_dropna_normal_index_dataframe(dropna, idx, outputs):
     df = pd.DataFrame(df_list, columns=["a", "b", "c", "d"])
     grouped = df.groupby("a", dropna=dropna).sum()
 
-    expected = pd.DataFrame(outputs, index=pd.Index(idx, dtype="object", name="a"))
+    expected = pd.DataFrame(outputs, index=pd.Index(idx, name="a"))
 
     tm.assert_frame_equal(grouped, expected)
 
@@ -326,9 +324,7 @@ def test_groupby_apply_with_dropna_for_multi_index(dropna, data, selected_data, 
 
     df = pd.DataFrame(data)
     gb = df.groupby("groups", dropna=dropna)
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = gb.apply(lambda grp: pd.DataFrame({"values": range(len(grp))}))
+    result = gb.apply(lambda grp: pd.DataFrame({"values": range(len(grp))}))
 
     mi_tuples = tuple(zip(data["groups"], selected_data["values"]))
     mi = pd.MultiIndex.from_tuples(mi_tuples, names=["groups", None])
@@ -416,12 +412,7 @@ def test_groupby_drop_nan_with_multi_index():
         "Float64",
         "category",
         "string",
-        pytest.param(
-            "string[pyarrow]",
-            marks=pytest.mark.skipif(
-                pa_version_under10p1, reason="pyarrow is not installed"
-            ),
-        ),
+        pytest.param("string[pyarrow]", marks=td.skip_if_no("pyarrow")),
         "datetime64[ns]",
         "period[D]",
         "Sparse[float]",
@@ -442,6 +433,8 @@ def test_no_sort_keep_na(sequence_index, dtype, test_series, as_index):
         uniques = {"x": "x", "y": "y", "z": pd.NA}
     elif dtype in ("datetime64[ns]", "period[D]"):
         uniques = {"x": "2016-01-01", "y": "2017-01-01", "z": pd.NA}
+    elif dtype is not None and dtype.startswith(("I", "U", "F")):
+        uniques = {"x": 1, "y": 2, "z": pd.NA}
     else:
         uniques = {"x": 1, "y": 2, "z": np.nan}
 
@@ -547,7 +540,7 @@ def test_categorical_reducers(reduction_func, observed, sort, as_index, index_ki
 
     gb_filled = df_filled.groupby(keys, observed=observed, sort=sort, as_index=True)
     if reduction_func == "corrwith":
-        warn = FutureWarning
+        warn = Pandas4Warning
         msg = "DataFrameGroupBy.corrwith is deprecated"
     else:
         warn = None
@@ -578,7 +571,7 @@ def test_categorical_reducers(reduction_func, observed, sort, as_index, index_ki
             expected = expected["size"].rename(None)
 
     if reduction_func == "corrwith":
-        warn = FutureWarning
+        warn = Pandas4Warning
         msg = "DataFrameGroupBy.corrwith is deprecated"
     else:
         warn = None

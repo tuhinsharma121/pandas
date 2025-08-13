@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 from pandas.compat._constants import (
     IS64,
     ISMUSL,
-    PY311,
     PY312,
     PYPY,
     WASM,
@@ -26,14 +25,16 @@ from pandas.compat._constants import (
 from pandas.compat.numpy import is_numpy_dev
 from pandas.compat.pyarrow import (
     HAS_PYARROW,
-    pa_version_under10p1,
-    pa_version_under11p0,
+    pa_version_under12p1,
     pa_version_under13p0,
     pa_version_under14p0,
     pa_version_under14p1,
     pa_version_under16p0,
     pa_version_under17p0,
     pa_version_under18p0,
+    pa_version_under19p0,
+    pa_version_under20p0,
+    pa_version_under21p0,
 )
 
 if TYPE_CHECKING:
@@ -150,20 +151,21 @@ def is_ci_environment() -> bool:
 
 
 __all__ = [
+    "HAS_PYARROW",
+    "IS64",
+    "ISMUSL",
+    "PY312",
+    "PYPY",
+    "WASM",
     "is_numpy_dev",
-    "pa_version_under10p1",
-    "pa_version_under11p0",
+    "pa_version_under12p1",
     "pa_version_under13p0",
     "pa_version_under14p0",
     "pa_version_under14p1",
     "pa_version_under16p0",
     "pa_version_under17p0",
     "pa_version_under18p0",
-    "HAS_PYARROW",
-    "IS64",
-    "ISMUSL",
-    "PY311",
-    "PY312",
-    "PYPY",
-    "WASM",
+    "pa_version_under19p0",
+    "pa_version_under20p0",
+    "pa_version_under21p0",
 ]

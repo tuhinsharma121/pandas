@@ -26,6 +26,7 @@ from typing import (
     TYPE_CHECKING,
     AnyStr,
     Final,
+    Self,
     cast,
 )
 import warnings
@@ -84,7 +85,6 @@ if TYPE_CHECKING:
         CompressionOptions,
         FilePath,
         ReadBuffer,
-        Self,
         StorageOptions,
         WriteBuffer,
     )
@@ -393,14 +393,22 @@ def _datetime_to_stata_elapsed_vec(dates: Series, fmt: str) -> Series:
                 d["days"] = np.asarray(diff).astype("m8[D]").view("int64")
 
         elif infer_dtype(dates, skipna=False) == "datetime":
+            warnings.warn(
+                # GH#56536
+                "Converting object-dtype columns of datetimes to datetime64 when "
+                "writing to stata is deprecated. Call "
+                "`df=df.infer_objects(copy=False)` before writing to stata instead.",
+                FutureWarning,
+                stacklevel=find_stack_level(),
+            )
             if delta:
                 delta = dates._values - stata_epoch
 
                 def f(x: timedelta) -> float:
-                    return US_PER_DAY * x.days + 1000000 * x.seconds + x.microseconds
+                    return US_PER_DAY * x.days + 1_000_000 * x.seconds + x.microseconds
 
                 v = np.vectorize(f)
-                d["delta"] = v(delta)
+                d["delta"] = v(delta) // 1_000  # convert back to ms
             if year:
                 year_month = dates.apply(lambda x: 100 * x.year + x.month)
                 d["year"] = year_month._values // 100
@@ -2206,15 +2214,15 @@ def _convert_datetime_to_stata_type(fmt: str) -> np.dtype:
 
 def _maybe_convert_to_int_keys(convert_dates: dict, varlist: list[Hashable]) -> dict:
     new_dict = {}
-    for key in convert_dates:
+    for key, value in convert_dates.items():
         if not convert_dates[key].startswith("%"):  # make sure proper fmts
-            convert_dates[key] = "%" + convert_dates[key]
+            convert_dates[key] = "%" + value
         if key in varlist:
-            new_dict.update({varlist.index(key): convert_dates[key]})
+            new_dict[varlist.index(key)] = convert_dates[key]
         else:
             if not isinstance(key, int):
                 raise ValueError("convert_dates key must be a column or an integer")
-            new_dict.update({key: convert_dates[key]})
+            new_dict[key] = convert_dates[key]
     return new_dict
 
 
@@ -2739,7 +2747,7 @@ supported types."""
                 encoded = self.data[col].str.encode(self._encoding)
                 # If larger than _max_string_length do nothing
                 if (
-                    max_len_string_array(ensure_object(encoded._values))
+                    max_len_string_array(ensure_object(self.data[col]._values))
                     <= self._max_string_length
                 ):
                     self.data[col] = encoded
@@ -2747,6 +2755,18 @@ supported types."""
     def write_file(self) -> None:
         """
         Export DataFrame object to Stata dta format.
+
+        This method writes the contents of a pandas DataFrame to a `.dta` file
+        compatible with Stata. It includes features for handling value labels,
+        variable types, and metadata like timestamps and data labels. The output
+        file can then be read and used in Stata or other compatible statistical
+        tools.
+
+        See Also
+        --------
+        read_stata : Read Stata file into DataFrame.
+        DataFrame.to_stata : Export DataFrame object to Stata dta format.
+        io.stata.StataWriter : A class for writing Stata binary dta files.
 
         Examples
         --------
@@ -2867,7 +2887,7 @@ supported types."""
         # ds_format - just use 114
         self._write_bytes(struct.pack("b", 114))
         # byteorder
-        self._write(byteorder == ">" and "\x01" or "\x02")
+        self._write((byteorder == ">" and "\x01") or "\x02")
         # filetype
         self._write("\x01")
         # unused
@@ -3184,8 +3204,8 @@ class StataStrLWriter:
         for o, (idx, row) in enumerate(selected.iterrows()):
             for j, (col, v) in enumerate(col_index):
                 val = row[col]
-                # Allow columns with mixed str and None (GH 23633)
-                val = "" if val is None else val
+                # Allow columns with mixed str and None or pd.NA (GH 23633)
+                val = "" if isna(val) else val
                 key = gso_table.get(val, None)
                 if key is None:
                     # Stata prefers human numbers
@@ -3251,11 +3271,15 @@ class StataStrLWriter:
             bio.write(gso_type)
 
             # llll
-            utf8_string = bytes(strl, "utf-8")
-            bio.write(struct.pack(len_type, len(utf8_string) + 1))
+            if isinstance(strl, str):
+                strl_convert = bytes(strl, "utf-8")
+            else:
+                strl_convert = strl
+
+            bio.write(struct.pack(len_type, len(strl_convert) + 1))
 
             # xxx...xxx
-            bio.write(utf8_string)
+            bio.write(strl_convert)
             bio.write(null)
 
         return bio.getvalue()
@@ -3413,7 +3437,7 @@ class StataWriter117(StataWriter):
         # ds_format - 117
         bio.write(self._tag(bytes(str(self._dta_version), "utf-8"), "release"))
         # byteorder
-        bio.write(self._tag(byteorder == ">" and "MSF" or "LSF", "byteorder"))
+        bio.write(self._tag((byteorder == ">" and "MSF") or "LSF", "byteorder"))
         # number of vars, 2 bytes in 117 and 118, 4 byte in 119
         nvar_type = "H" if self._dta_version <= 118 else "I"
         bio.write(self._tag(struct.pack(byteorder + nvar_type, self.nvar), "K"))

@@ -11,6 +11,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    Self,
     TypeVar,
     final,
     overload,
@@ -32,6 +33,7 @@ from pandas.util._validators import check_dtype_backend
 from pandas.core.dtypes.common import (
     ensure_str,
     is_string_dtype,
+    pandas_dtype,
 )
 from pandas.core.dtypes.dtypes import PeriodDtype
 
@@ -48,6 +50,7 @@ from pandas import (
 from pandas.core.reshape.concat import concat
 from pandas.core.shared_docs import _shared_docs
 
+from pandas.io._util import arrow_table_to_pandas
 from pandas.io.common import (
     IOHandles,
     dedup_names,
@@ -80,7 +83,6 @@ if TYPE_CHECKING:
         JSONEngine,
         JSONSerializable,
         ReadBuffer,
-        Self,
         StorageOptions,
         WriteBuffer,
     )
@@ -364,10 +366,8 @@ class JSONTableWriter(FrameWriter):
             )
 
         # TODO: Do this timedelta properly in objToJSON.c See GH #15137
-        if (
-            (obj.ndim == 1)
-            and (obj.name in set(obj.index.names))
-            or len(obj.columns.intersection(obj.index.names))
+        if ((obj.ndim == 1) and (obj.name in set(obj.index.names))) or len(
+            obj.columns.intersection(obj.index.names)
         ):
             msg = "Overlapping names between the index and columns"
             raise ValueError(msg)
@@ -521,6 +521,12 @@ def read_json(
 ) -> DataFrame | Series | JsonReader:
     """
     Convert a JSON string to pandas object.
+
+    This method reads JSON files or JSON-like data and converts them into pandas
+    objects. It supports a variety of input formats, including line-delimited JSON,
+    compressed files, and various data representations (table, records, index-based,
+    etc.). When `chunksize` is specified, an iterator is returned instead of loading
+    the entire data into memory.
 
     Parameters
     ----------
@@ -740,9 +746,9 @@ def read_json(
     >>> df.to_json(orient='table')
         '\
 {{"schema":{{"fields":[\
-{{"name":"index","type":"string"}},\
-{{"name":"col 1","type":"string"}},\
-{{"name":"col 2","type":"string"}}],\
+{{"name":"index","type":"string","extDtype":"str"}},\
+{{"name":"col 1","type":"string","extDtype":"str"}},\
+{{"name":"col 2","type":"string","extDtype":"str"}}],\
 "primaryKey":["index"],\
 "pandas_version":"1.4.0"}},\
 "data":[\
@@ -919,7 +925,7 @@ class JsonReader(abc.Iterator, Generic[FrameSeriesStrT]):
         Combines a list of JSON objects into one JSON object.
         """
         return (
-            f'[{",".join([line for line in (line.strip() for line in lines) if line])}]'
+            f"[{','.join([line for line in (line.strip() for line in lines) if line])}]"
         )
 
     @overload
@@ -938,40 +944,61 @@ class JsonReader(abc.Iterator, Generic[FrameSeriesStrT]):
         obj: DataFrame | Series
         with self:
             if self.engine == "pyarrow":
-                pyarrow_json = import_optional_dependency("pyarrow.json")
-                pa_table = pyarrow_json.read_json(self.data)
-
-                mapping: type[ArrowDtype] | None | Callable
-                if self.dtype_backend == "pyarrow":
-                    mapping = ArrowDtype
-                elif self.dtype_backend == "numpy_nullable":
-                    from pandas.io._util import _arrow_dtype_mapping
-
-                    mapping = _arrow_dtype_mapping().get
-                else:
-                    mapping = None
-
-                return pa_table.to_pandas(types_mapper=mapping)
+                obj = self._read_pyarrow()
             elif self.engine == "ujson":
-                if self.lines:
-                    if self.chunksize:
-                        obj = concat(self)
-                    elif self.nrows:
-                        lines = list(islice(self.data, self.nrows))
-                        lines_json = self._combine_lines(lines)
-                        obj = self._get_object_parser(lines_json)
-                    else:
-                        data = ensure_str(self.data)
-                        data_lines = data.split("\n")
-                        obj = self._get_object_parser(self._combine_lines(data_lines))
-                else:
-                    obj = self._get_object_parser(self.data)
-                if self.dtype_backend is not lib.no_default:
-                    return obj.convert_dtypes(
-                        infer_objects=False, dtype_backend=self.dtype_backend
-                    )
-                else:
-                    return obj
+                obj = self._read_ujson()
+
+        return obj
+
+    def _read_pyarrow(self) -> DataFrame:
+        """
+        Read JSON using the pyarrow engine.
+        """
+        pyarrow_json = import_optional_dependency("pyarrow.json")
+        options = None
+
+        if isinstance(self.dtype, dict):
+            pa = import_optional_dependency("pyarrow")
+            fields = []
+            for field, dtype in self.dtype.items():
+                pd_dtype = pandas_dtype(dtype)
+                if isinstance(pd_dtype, ArrowDtype):
+                    fields.append((field, pd_dtype.pyarrow_dtype))
+
+            schema = pa.schema(fields)
+            options = pyarrow_json.ParseOptions(
+                explicit_schema=schema, unexpected_field_behavior="infer"
+            )
+
+        pa_table = pyarrow_json.read_json(self.data, parse_options=options)
+        df = arrow_table_to_pandas(pa_table, dtype_backend=self.dtype_backend)
+
+        return df
+
+    def _read_ujson(self) -> DataFrame | Series:
+        """
+        Read JSON using the ujson engine.
+        """
+        obj: DataFrame | Series
+        if self.lines:
+            if self.chunksize:
+                obj = concat(self)
+            elif self.nrows:
+                lines = list(islice(self.data, self.nrows))
+                lines_json = self._combine_lines(lines)
+                obj = self._get_object_parser(lines_json)
+            else:
+                data = ensure_str(self.data)
+                data_lines = data.split("\n")
+                obj = self._get_object_parser(self._combine_lines(data_lines))
+        else:
+            obj = self._get_object_parser(self.data)
+        if self.dtype_backend is not lib.no_default:
+            return obj.convert_dtypes(
+                infer_objects=False, dtype_backend=self.dtype_backend
+            )
+        else:
+            return obj
 
     def _get_object_parser(self, json: str) -> DataFrame | Series:
         """

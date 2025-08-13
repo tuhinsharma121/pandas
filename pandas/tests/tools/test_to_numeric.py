@@ -192,7 +192,7 @@ def test_numeric_df_columns(columns):
     # see gh-14827
     df = DataFrame(
         {
-            "a": [1.2, decimal.Decimal(3.14), decimal.Decimal("infinity"), "0.1"],
+            "a": [1.2, decimal.Decimal("3.14"), decimal.Decimal("infinity"), "0.1"],
             "b": [1.0, 2.0, 3.0, 4.0],
         }
     )
@@ -207,10 +207,10 @@ def test_numeric_df_columns(columns):
     "data,exp_data",
     [
         (
-            [[decimal.Decimal(3.14), 1.0], decimal.Decimal(1.6), 0.1],
+            [[decimal.Decimal("3.14"), 1.0], decimal.Decimal("1.6"), 0.1],
             [[3.14, 1.0], 1.6, 0.1],
         ),
-        ([np.array([decimal.Decimal(3.14), 1.0]), 0.1], [[3.14, 1.0], 0.1]),
+        ([np.array([decimal.Decimal("3.14"), 1.0]), 0.1], [[3.14, 1.0], 0.1]),
     ],
 )
 def test_numeric_embedded_arr_likes(data, exp_data):
@@ -703,11 +703,11 @@ def test_precision_float_conversion(strrep):
 @pytest.mark.parametrize(
     "values, expected",
     [
-        (["1", "2", None], Series([1, 2, np.nan], dtype="Int64")),
+        (["1", "2", None], Series([1, 2, pd.NA], dtype="Int64")),
         (["1", "2", "3"], Series([1, 2, 3], dtype="Int64")),
         (["1", "2", 3], Series([1, 2, 3], dtype="Int64")),
         (["1", "2", 3.5], Series([1, 2, 3.5], dtype="Float64")),
-        (["1", None, 3.5], Series([1, np.nan, 3.5], dtype="Float64")),
+        (["1", None, 3.5], Series([1, pd.NA, 3.5], dtype="Float64")),
         (["1", "2", "3.5"], Series([1, 2, 3.5], dtype="Float64")),
     ],
 )
@@ -898,7 +898,7 @@ def test_to_numeric_dtype_backend_error(dtype_backend):
         dtype = "double[pyarrow]"
     else:
         dtype = "Float64"
-    expected = Series([np.nan, np.nan, np.nan], dtype=dtype)
+    expected = Series([pd.NA, pd.NA, pd.NA], dtype=dtype)
     tm.assert_series_equal(result, expected)
 
 

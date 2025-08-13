@@ -9,8 +9,6 @@ from io import StringIO
 import numpy as np
 import pytest
 
-from pandas._config import using_string_dtype
-
 from pandas.errors import ParserWarning
 
 import pandas as pd
@@ -57,7 +55,6 @@ def test_dtype_all_columns(all_parsers, dtype, check_orig, using_infer_string):
         tm.assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)")
 @pytest.mark.usefixtures("pyarrow_xfail")
 def test_dtype_per_column(all_parsers):
     parser = all_parsers
@@ -71,7 +68,6 @@ one,two
         [[1, "2.5"], [2, "3.5"], [3, "4.5"], [4, "5.5"]], columns=["one", "two"]
     )
     expected["one"] = expected["one"].astype(np.float64)
-    expected["two"] = expected["two"].astype(object)
 
     result = parser.read_csv(StringIO(data), dtype={"one": np.float64, 1: str})
     tm.assert_frame_equal(result, expected)
@@ -522,9 +518,6 @@ def test_dtype_backend_pyarrow(all_parsers, request):
     tm.assert_frame_equal(result, expected)
 
 
-# pyarrow engine failing:
-# https://github.com/pandas-dev/pandas/issues/56136
-@pytest.mark.usefixtures("pyarrow_xfail")
 def test_ea_int_avoid_overflow(all_parsers):
     # GH#32134
     parser = all_parsers
@@ -598,7 +591,6 @@ z,a"""
     tm.assert_frame_equal(result, expected)
 
 
-@xfail_pyarrow
 def test_accurate_parsing_of_large_integers(all_parsers):
     # GH#52505
     data = """SYMBOL,MOMENT,ID,ID_DEAL

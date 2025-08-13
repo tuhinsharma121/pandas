@@ -3,6 +3,8 @@ import re
 import numpy as np
 import pytest
 
+import pandas.util._test_decorators as td
+
 import pandas as pd
 import pandas._testing as tm
 from pandas.core.arrays import IntervalArray
@@ -635,13 +637,11 @@ class TestSeriesReplace:
         tm.assert_series_equal(result, expected)
 
     @pytest.mark.parametrize("regex", [False, True])
-    def test_replace_regex_dtype_series_string(self, regex, using_infer_string):
-        if not using_infer_string:
-            # then this is object dtype which is already tested above
-            return
+    def test_replace_regex_dtype_series_string(self, regex):
         series = pd.Series(["0"], dtype="str")
-        with pytest.raises(TypeError, match="Invalid value"):
-            series.replace(to_replace="0", value=1, regex=regex)
+        expected = pd.Series([1], dtype=object)
+        result = series.replace(to_replace="0", value=1, regex=regex)
+        tm.assert_series_equal(result, expected)
 
     def test_replace_different_int_types(self, any_int_numpy_dtype):
         # GH#45311
@@ -710,3 +710,19 @@ class TestSeriesReplace:
         expected = ser.copy()
         result = ser.replace(0.0, True)
         tm.assert_series_equal(result, expected)
+
+    def test_replace_all_NA(self):
+        # GH#60688
+        df = pd.Series([pd.NA, pd.NA])
+        result = df.replace({r"^#": "$"}, regex=True)
+        expected = pd.Series([pd.NA, pd.NA])
+        tm.assert_series_equal(result, expected)
+
+
+@td.skip_if_no("pyarrow")
+def test_replace_from_index():
+    # https://github.com/pandas-dev/pandas/issues/61622
+    idx = pd.Index(["a", "b", "c"], dtype="string[pyarrow]")
+    expected = pd.Series(["d", "b", "c"], dtype="string[pyarrow]")
+    result = pd.Series(idx).replace({"z": "b", "a": "d"})
+    tm.assert_series_equal(result, expected)

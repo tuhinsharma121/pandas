@@ -6,8 +6,10 @@ import numpy as np
 import pytest
 
 from pandas._libs import lib
+from pandas._libs.tslibs import Day
 from pandas._typing import DatetimeNaTType
 from pandas.compat import is_platform_windows
+from pandas.errors import Pandas4Warning
 import pandas.util._test_decorators as td
 
 import pandas as pd
@@ -33,6 +35,7 @@ from pandas.core.resample import (
 )
 
 from pandas.tseries import offsets
+from pandas.tseries.frequencies import to_offset
 from pandas.tseries.offsets import Minute
 
 
@@ -884,7 +887,8 @@ def test_resample_origin_epoch_with_tz_day_vs_24h(unit):
 
     result_1 = ts_1.resample("D", origin="epoch").mean()
     result_2 = ts_1.resample("24h", origin="epoch").mean()
-    tm.assert_series_equal(result_1, result_2)
+    tm.assert_series_equal(result_1, result_2, check_freq=False)
+    # GH#41943 check_freq=False bc Day and Hour(24) no longer compare as equal
 
     # check that we have the same behavior with epoch even if we are not timezone aware
     ts_no_tz = ts_1.tz_localize(None)
@@ -932,8 +936,9 @@ def test_resample_origin_with_day_freq_on_dst(unit):
     rng = date_range(start, end, freq="1h").as_unit(unit)
     ts = Series(np.ones(len(rng)), index=rng)
 
-    expected_ts = ["2013-11-02 22:00-05:00", "2013-11-03 22:00-06:00"]
-    expected = _create_series([23.0, 2.0], expected_ts)
+    # GH#61985 changed this to behave like "B" rather than "24h"
+    expected_ts = ["2013-11-03 00:00-05:00"]
+    expected = _create_series([25.0], expected_ts)
     result = ts.resample("D", origin="start", offset="-2h").sum()
     tm.assert_series_equal(result, expected)
 
@@ -942,18 +947,19 @@ def test_resample_origin_with_day_freq_on_dst(unit):
     result = ts.resample("24h", origin="start", offset="-2h").sum()
     tm.assert_series_equal(result, expected)
 
-    expected_ts = ["2013-11-02 02:00-05:00", "2013-11-03 02:00-06:00"]
-    expected = _create_series([3.0, 22.0], expected_ts)
+    # GH#61985 changed this to behave like "B" rather than "24h"
+    expected_ts = ["2013-11-03 00:00-05:00"]
+    expected = _create_series([25.0], expected_ts)
     result = ts.resample("D", origin="start", offset="2h").sum()
     tm.assert_series_equal(result, expected)
 
-    expected_ts = ["2013-11-02 23:00-05:00", "2013-11-03 23:00-06:00"]
-    expected = _create_series([24.0, 1.0], expected_ts)
+    expected_ts = ["2013-11-03 00:00-05:00"]
+    expected = _create_series([25.0], expected_ts)
     result = ts.resample("D", origin="start", offset="-1h").sum()
     tm.assert_series_equal(result, expected)
 
-    expected_ts = ["2013-11-02 01:00-05:00", "2013-11-03 01:00:00-0500"]
-    expected = _create_series([1.0, 24.0], expected_ts)
+    expected_ts = ["2013-11-03 00:00-05:00"]
+    expected = _create_series([25.0], expected_ts)
     result = ts.resample("D", origin="start", offset="1h").sum()
     tm.assert_series_equal(result, expected)
 
@@ -1022,12 +1028,8 @@ def test_resample_segfault(unit):
         all_wins_and_wagers, columns=("ID", "timestamp", "A", "B")
     ).set_index("timestamp")
     df.index = df.index.as_unit(unit)
-    msg = "DataFrameGroupBy.resample operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = df.groupby("ID").resample("5min").sum()
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        expected = df.groupby("ID").apply(lambda x: x.resample("5min").sum())
+    result = df.groupby("ID").resample("5min").sum()
+    expected = df.groupby("ID").apply(lambda x: x.resample("5min").sum())
     tm.assert_frame_equal(result, expected)
 
 
@@ -1046,9 +1048,7 @@ def test_resample_dtype_preservation(unit):
     result = df.resample("1D").ffill()
     assert result.val.dtype == np.int32
 
-    msg = "DataFrameGroupBy.resample operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = df.groupby("group").resample("1D").ffill()
+    result = df.groupby("group").resample("1D").ffill()
     assert result.val.dtype == np.int32
 
 
@@ -1319,7 +1319,7 @@ def test_resample_consistency(unit):
 
     s10 = s.reindex(index=i10, method="bfill")
     s10_2 = s.reindex(index=i10, method="bfill", limit=2)
-    with tm.assert_produces_warning(FutureWarning):
+    with tm.assert_produces_warning(Pandas4Warning):
         rl = s.reindex_like(s10, method="bfill", limit=2)
     r10_2 = s.resample("10Min").bfill(limit=2)
     r10 = s.resample("10Min").bfill()
@@ -1821,12 +1821,8 @@ def test_resample_apply_with_additional_args2():
     multiplier = 10
 
     df = DataFrame({"A": 1, "B": 2}, index=date_range("2017", periods=10))
-    msg = "DataFrameGroupBy.resample operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = df.groupby("A").resample("D").agg(f, multiplier).astype(float)
-    msg = "DataFrameGroupBy.resample operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        expected = df.groupby("A").resample("D").mean().multiply(multiplier)
+    result = df.groupby("A").resample("D").agg(f, multiplier).astype(float)
+    expected = df.groupby("A").resample("D").mean().multiply(multiplier)
     tm.assert_frame_equal(result, expected)
 
 
@@ -1855,6 +1851,10 @@ def test_resample_equivalent_offsets(n1, freq1, n2, freq2, k, unit):
 
     result1 = ser.resample(str(n1_) + freq1).mean()
     result2 = ser.resample(str(n2_) + freq2).mean()
+    if freq2 == "D" and isinstance(result2.index.freq, Day):
+        # GH#55502 Day is no longer a Tick so no longer compares as equivalent,
+        #  but the actual values we expect should still match
+        result2.index.freq = to_offset(Timedelta(days=result2.index.freq.n))
     tm.assert_series_equal(result1, result2)
 
 
@@ -2069,7 +2069,8 @@ def test_resample_depr_lowercase_frequency(freq, freq_depr, data):
 
     exp_dti = DatetimeIndex(data=data, dtype="datetime64[ns]", freq=freq)
     expected = Series(2.0, index=exp_dti)
-    tm.assert_series_equal(result, expected)
+    tm.assert_series_equal(result, expected, check_freq=False)
+    # GH#41943 check_freq=False bc 24H and D no longer compare as equal
 
 
 def test_resample_ms_closed_right(unit):
@@ -2161,6 +2162,16 @@ def test_arrow_timestamp_resample(tz):
     if tz is not None:
         idx = idx.dt.tz_localize(tz)
     expected = Series(np.arange(5, dtype=np.float64), index=idx)
+    result = expected.resample("1D").mean()
+    tm.assert_series_equal(result, expected)
+
+
+@td.skip_if_no("pyarrow")
+def test_arrow_timestamp_resample_keep_index_name():
+    # https://github.com/pandas-dev/pandas/issues/61222
+    idx = Series(date_range("2020-01-01", periods=5), dtype="timestamp[ns][pyarrow]")
+    expected = Series(np.arange(5, dtype=np.float64), index=idx)
+    expected.index.name = "index_name"
     result = expected.resample("1D").mean()
     tm.assert_series_equal(result, expected)
 

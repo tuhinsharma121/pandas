@@ -147,7 +147,7 @@ def test_to_offset_leading_plus(freqstr, expected, wrn):
         ({"days": -1, "seconds": 1}, offsets.Second(-86399)),
         ({"hours": 1, "minutes": 10}, offsets.Minute(70)),
         ({"hours": 1, "minutes": -10}, offsets.Minute(50)),
-        ({"weeks": 1}, offsets.Day(7)),
+        ({"weeks": 1}, offsets.Hour(168)),
         ({"hours": 1}, offsets.Hour(1)),
         ({"hours": 1}, to_offset("60min")),
         ({"microseconds": 1}, offsets.Micro(1)),
@@ -207,8 +207,10 @@ def test_to_offset_lowercase_frequency_raises(freq_depr):
 @pytest.mark.parametrize("freq_depr", ["2MIN", "2Us", "2NS"])
 def test_to_offset_uppercase_frequency_deprecated(freq_depr):
     # GH#54939
-    depr_msg = f"'{freq_depr[1:]}' is deprecated and will be removed in a "
-    f"future version, please use '{freq_depr.lower()[1:]}' instead."
+    depr_msg = (
+        f"'{freq_depr[1:]}' is deprecated and will be removed in a "
+        f"future version, please use '{freq_depr.lower()[1:]}' instead."
+    )
 
     with tm.assert_produces_warning(FutureWarning, match=depr_msg):
         to_offset(freq_depr)

@@ -10,16 +10,13 @@ These are used for:
 from __future__ import annotations
 
 from typing import (
-    TYPE_CHECKING,
     NoReturn,
+    Self,
 )
 
 from pandas.core.base import PandasObject
 
 from pandas.io.formats.printing import pprint_thing
-
-if TYPE_CHECKING:
-    from pandas._typing import Self
 
 
 class FrozenList(PandasObject, list):
@@ -110,7 +107,9 @@ class FrozenList(PandasObject, list):
         raise TypeError(f"'{type(self).__name__}' does not support mutable operations.")
 
     def __str__(self) -> str:
-        return pprint_thing(self, quote_strings=True, escape_chars=("\t", "\r", "\n"))
+        return pprint_thing(
+            self, quote_strings=True, escape_chars=("\t", "\r", "\n", "'")
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self!s})"

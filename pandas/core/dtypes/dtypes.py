@@ -15,6 +15,7 @@ import re
 from typing import (
     TYPE_CHECKING,
     Any,
+    Self,
     cast,
 )
 import warnings
@@ -46,7 +47,10 @@ from pandas._libs.tslibs.dtypes import (
     abbrev_to_npy_unit,
 )
 from pandas._libs.tslibs.offsets import BDay
-from pandas.compat import pa_version_under10p1
+from pandas.compat import (
+    HAS_PYARROW,
+    pa_version_under12p1,
+)
 from pandas.errors import PerformanceWarning
 from pandas.util._decorators import set_module
 from pandas.util._exceptions import find_stack_level
@@ -66,14 +70,14 @@ from pandas.core.dtypes.inference import (
     is_list_like,
 )
 
-if not pa_version_under10p1:
+if HAS_PYARROW:
     import pyarrow as pa
 
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
     from datetime import tzinfo
 
-    import pyarrow as pa  # noqa: TCH004
+    import pyarrow as pa  # noqa: TC004
 
     from pandas._typing import (
         Dtype,
@@ -81,7 +85,6 @@ if TYPE_CHECKING:
         IntervalClosedType,
         Ordered,
         Scalar,
-        Self,
         npt,
         type_t,
     )
@@ -161,6 +164,11 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
     """
     Type for categorical data with the categories and orderedness.
 
+    It is a dtype representation for categorical data, which allows users to define
+    a fixed set of values and optionally impose an ordering. This is particularly
+    useful for handling categorical variables efficiently, as it can significantly
+    reduce memory usage compared to using object dtypes.
+
     Parameters
     ----------
     categories : sequence, optional
@@ -201,7 +209,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
     2      a
     3    NaN
     dtype: category
-    Categories (2, object): ['b' < 'a']
+    Categories (2, str): ['b' < 'a']
 
     An empty CategoricalDtype with a specific dtype can be created
     by providing an empty index. As follows,
@@ -294,7 +302,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
         >>> pd.CategoricalDtype._from_values_or_dtype(
         ...     categories=["a", "b"], ordered=True
         ... )
-        CategoricalDtype(categories=['a', 'b'], ordered=True, categories_dtype=object)
+        CategoricalDtype(categories=['a', 'b'], ordered=True, categories_dtype=str)
         >>> dtype1 = pd.CategoricalDtype(["a", "b"], ordered=True)
         >>> dtype2 = pd.CategoricalDtype(["x", "y"], ordered=False)
         >>> c = pd.Categorical([0, 1], dtype=dtype1)
@@ -309,7 +317,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
         The supplied dtype takes precedence over values' dtype:
 
         >>> pd.CategoricalDtype._from_values_or_dtype(c, dtype=dtype2)
-        CategoricalDtype(categories=['x', 'y'], ordered=False, categories_dtype=object)
+        CategoricalDtype(categories=['x', 'y'], ordered=False, categories_dtype=str)
         """
 
         if dtype is not None:
@@ -519,8 +527,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
         combined_hashed = combine_hash_arrays(iter(cat_array), num_items=len(cat_array))
         return np.bitwise_xor.reduce(combined_hashed)
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[Categorical]:
+    def construct_array_type(self) -> type_t[Categorical]:
         """
         Return the array type associated with this dtype.
 
@@ -605,8 +612,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
             return self
         elif not self.is_dtype(dtype):
             raise ValueError(
-                f"a CategoricalDtype must be passed to perform an update, "
-                f"got {dtype!r}"
+                f"a CategoricalDtype must be passed to perform an update, got {dtype!r}"
             )
         else:
             # from here on, dtype is a CategoricalDtype
@@ -640,7 +646,7 @@ class CategoricalDtype(PandasExtensionDtype, ExtensionDtype):
         --------
         >>> cat_type = pd.CategoricalDtype(categories=["a", "b"], ordered=True)
         >>> cat_type.categories
-        Index(['a', 'b'], dtype='object')
+        Index(['a', 'b'], dtype='str')
         """
         return self._categories
 
@@ -849,8 +855,7 @@ class DatetimeTZDtype(PandasExtensionDtype):
         """
         return self._tz
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[DatetimeArray]:
+    def construct_array_type(self) -> type_t[DatetimeArray]:
         """
         Return the array type associated with this dtype.
 
@@ -1115,10 +1120,8 @@ class PeriodDtype(PeriodDtypeBase, PandasExtensionDtype):
         possible
         """
         if (
-            isinstance(string, str)
-            and (string.startswith(("period[", "Period[")))
-            or isinstance(string, BaseOffset)
-        ):
+            isinstance(string, str) and (string.startswith(("period[", "Period[")))
+        ) or isinstance(string, BaseOffset):
             # do not parse string like U as period[U]
             # avoid tuple to be regarded as freq
             try:
@@ -1154,7 +1157,7 @@ class PeriodDtype(PeriodDtypeBase, PandasExtensionDtype):
     @classmethod
     def is_dtype(cls, dtype: object) -> bool:
         """
-        Return a boolean if we if the passed type is an actual dtype that we
+        Return a boolean if the passed type is an actual dtype that we
         can match (via string or type)
         """
         if isinstance(dtype, str):
@@ -1169,8 +1172,7 @@ class PeriodDtype(PeriodDtypeBase, PandasExtensionDtype):
                 return False
         return super().is_dtype(dtype)
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[PeriodArray]:
+    def construct_array_type(self) -> type_t[PeriodArray]:
         """
         Return the array type associated with this dtype.
 
@@ -1358,8 +1360,7 @@ class IntervalDtype(PandasExtensionDtype):
         """
         return self._subtype
 
-    @classmethod
-    def construct_array_type(cls) -> type[IntervalArray]:
+    def construct_array_type(self) -> type[IntervalArray]:
         """
         Return the array type associated with this dtype.
 
@@ -1434,7 +1435,7 @@ class IntervalDtype(PandasExtensionDtype):
     @classmethod
     def is_dtype(cls, dtype: object) -> bool:
         """
-        Return a boolean if we if the passed type is an actual dtype that we
+        Return a boolean if the passed type is an actual dtype that we
         can match (via string or type)
         """
         if isinstance(dtype, str):
@@ -1571,8 +1572,7 @@ class NumpyEADtype(ExtensionDtype):
             raise TypeError(msg) from err
         return cls(dtype)
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[NumpyExtensionArray]:
+    def construct_array_type(self) -> type_t[NumpyExtensionArray]:
         """
         Return the array type associated with this dtype.
 
@@ -1644,8 +1644,7 @@ class BaseMaskedDtype(ExtensionDtype):
         """Return the number of bytes in this dtype"""
         return self.numpy_dtype.itemsize
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[BaseMaskedArray]:
+    def construct_array_type(self) -> type_t[BaseMaskedArray]:
         """
         Return the array type associated with this dtype.
 
@@ -1909,8 +1908,7 @@ class SparseDtype(ExtensionDtype):
     def __repr__(self) -> str:
         return self.name
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[SparseArray]:
+    def construct_array_type(self) -> type_t[SparseArray]:
         """
         Return the array type associated with this dtype.
 
@@ -2191,8 +2189,8 @@ class ArrowDtype(StorageExtensionDtype):
 
     def __init__(self, pyarrow_dtype: pa.DataType) -> None:
         super().__init__("pyarrow")
-        if pa_version_under10p1:
-            raise ImportError("pyarrow>=10.0.1 is required for ArrowDtype")
+        if pa_version_under12p1:
+            raise ImportError("pyarrow>=12.0.1 is required for ArrowDtype")
         if not isinstance(pyarrow_dtype, pa.DataType):
             raise ValueError(
                 f"pyarrow_dtype ({pyarrow_dtype}) must be an instance "
@@ -2263,7 +2261,7 @@ class ArrowDtype(StorageExtensionDtype):
         elif pa.types.is_null(pa_type):
             # TODO: None? pd.NA? pa.null?
             return type(pa_type)
-        elif isinstance(pa_type, pa.ExtensionType):
+        elif isinstance(pa_type, pa.BaseExtensionType):
             return type(self)(pa_type.storage_type).type
         raise NotImplementedError(pa_type)
 
@@ -2311,8 +2309,7 @@ class ArrowDtype(StorageExtensionDtype):
         """Return the number of bytes in this dtype"""
         return self.numpy_dtype.itemsize
 
-    @classmethod
-    def construct_array_type(cls) -> type_t[ArrowExtensionArray]:
+    def construct_array_type(self) -> type_t[ArrowExtensionArray]:
         """
         Return the array type associated with this dtype.
 
@@ -2341,9 +2338,11 @@ class ArrowDtype(StorageExtensionDtype):
             )
         if not string.endswith("[pyarrow]"):
             raise TypeError(f"'{string}' must end with '[pyarrow]'")
-        if string == "string[pyarrow]":
+        if string in ("string[pyarrow]", "str[pyarrow]"):
             # Ensure Registry.find skips ArrowDtype to use StringDtype instead
             raise TypeError("string[pyarrow] should be constructed by StringDtype")
+        if pa_version_under12p1:
+            raise ImportError("pyarrow>=10.0.1 is required for ArrowDtype")
 
         base_type = string[:-9]  # get rid of "[pyarrow]"
         try:

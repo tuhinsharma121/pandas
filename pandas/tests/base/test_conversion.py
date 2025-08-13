@@ -1,8 +1,6 @@
 import numpy as np
 import pytest
 
-from pandas._config import using_string_dtype
-
 from pandas.compat import HAS_PYARROW
 from pandas.compat.numpy import np_version_gt2
 
@@ -259,7 +257,7 @@ def test_numpy_array_all_dtypes(any_numpy_dtype):
     [
         (pd.Categorical(["a", "b"]), "_codes"),
         (PeriodArray._from_sequence(["2000", "2001"], dtype="period[D]"), "_ndarray"),
-        (pd.array([0, np.nan], dtype="Int64"), "_data"),
+        (pd.array([0, pd.NA], dtype="Int64"), "_data"),
         (IntervalArray.from_breaks([0, 1]), "_left"),
         (SparseArray([0, 1]), "_sparse_values"),
         (
@@ -307,7 +305,7 @@ def test_array_multiindex_raises():
             np.array([pd.Period("2000", freq="D"), pd.Period("2001", freq="D")]),
             False,
         ),
-        (pd.array([0, np.nan], dtype="Int64"), np.array([0, np.nan]), False),
+        (pd.array([0, pd.NA], dtype="Int64"), np.array([0, np.nan]), False),
         (
             IntervalArray.from_breaks([0, 1, 2]),
             np.array([pd.Interval(0, 1), pd.Interval(1, 2)], dtype=object),
@@ -392,9 +390,6 @@ def test_to_numpy(arr, expected, zero_copy, index_or_series_or_array):
         assert np.may_share_memory(result_nocopy1, result_nocopy2)
 
 
-@pytest.mark.xfail(
-    using_string_dtype() and not HAS_PYARROW, reason="TODO(infer_string)", strict=False
-)
 @pytest.mark.parametrize("as_series", [True, False])
 @pytest.mark.parametrize(
     "arr", [np.array([1, 2, 3], dtype="int64"), np.array(["a", "b", "c"], dtype=object)]
@@ -406,13 +401,13 @@ def test_to_numpy_copy(arr, as_series, using_infer_string):
 
     # no copy by default
     result = obj.to_numpy()
-    if using_infer_string and arr.dtype == object:
+    if using_infer_string and arr.dtype == object and obj.dtype.storage == "pyarrow":
         assert np.shares_memory(arr, result) is False
     else:
         assert np.shares_memory(arr, result) is True
 
     result = obj.to_numpy(copy=False)
-    if using_infer_string and arr.dtype == object:
+    if using_infer_string and arr.dtype == object and obj.dtype.storage == "pyarrow":
         assert np.shares_memory(arr, result) is False
     else:
         assert np.shares_memory(arr, result) is True

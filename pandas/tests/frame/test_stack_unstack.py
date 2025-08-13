@@ -5,8 +5,6 @@ import re
 import numpy as np
 import pytest
 
-from pandas._config import using_string_dtype
-
 from pandas._libs import lib
 
 import pandas as pd
@@ -1350,8 +1348,10 @@ def test_unstack_sort_false(frame_or_series, dtype):
         )
     else:
         expected_columns = ["b", "a"]
+
+    item = pd.NA if dtype == "Float64" else np.nan
     expected = DataFrame(
-        [[1.0, np.nan], [np.nan, 2.0], [3.0, np.nan], [np.nan, 4.0]],
+        [[1.0, item], [item, 2.0], [3.0, item], [item, 4.0]],
         columns=expected_columns,
         index=MultiIndex.from_tuples(
             [("two", "z"), ("two", "y"), ("one", "z"), ("one", "y")]
@@ -1452,6 +1452,25 @@ def test_stack_empty_frame(dropna, future_stack):
             dropna=dropna, future_stack=future_stack
         )
         tm.assert_series_equal(result, expected)
+
+
+@pytest.mark.filterwarnings("ignore:The previous implementation of stack is deprecated")
+@pytest.mark.parametrize("dropna", [True, False, lib.no_default])
+def test_stack_empty_level(dropna, future_stack, int_frame):
+    # GH 60740
+    if future_stack and dropna is not lib.no_default:
+        with pytest.raises(ValueError, match="dropna must be unspecified"):
+            DataFrame(dtype=np.int64).stack(dropna=dropna, future_stack=future_stack)
+    else:
+        expected = int_frame
+        result = int_frame.copy().stack(
+            level=[], dropna=dropna, future_stack=future_stack
+        )
+        tm.assert_frame_equal(result, expected)
+
+        expected = DataFrame()
+        result = DataFrame().stack(level=[], dropna=dropna, future_stack=future_stack)
+        tm.assert_frame_equal(result, expected)
 
 
 @pytest.mark.filterwarnings("ignore:The previous implementation of stack is deprecated")
@@ -1675,7 +1694,6 @@ class TestStackUnstackMultiLevel:
         expected = unstacked.dropna(axis=1, how="all")
         tm.assert_frame_equal(unstacked, expected)
 
-    @pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)", strict=False)
     @pytest.mark.filterwarnings(
         "ignore:The previous implementation of stack is deprecated"
     )
@@ -1858,10 +1876,7 @@ class TestStackUnstackMultiLevel:
             }
         )
 
-        msg = "DataFrameGroupBy.apply operated on the grouping columns"
-        with tm.assert_produces_warning(DeprecationWarning, match=msg):
-            result = df.groupby(["state", "exp", "barcode", "v"]).apply(len)
-
+        result = df.groupby(["state", "exp", "barcode", "v"]).apply(len)
         unstacked = result.unstack()
         restacked = unstacked.stack(future_stack=future_stack)
         tm.assert_series_equal(restacked, result.reindex(restacked.index).astype(float))
@@ -1926,7 +1941,6 @@ class TestStackUnstackMultiLevel:
         expected = frame.stack(future_stack=future_stack)
         tm.assert_series_equal(result, expected)
 
-    @pytest.mark.xfail(using_string_dtype(), reason="TODO(infer_string)", strict=False)
     @pytest.mark.filterwarnings(
         "ignore:The previous implementation of stack is deprecated"
     )
@@ -2215,7 +2229,7 @@ class TestStackUnstackMultiLevel:
         tm.assert_frame_equal(recons, df)
 
     @pytest.mark.slow
-    def test_unstack_number_of_levels_larger_than_int32(
+    def test_unstack_number_of_levels_larger_than_int32_warns(
         self, performance_warning, monkeypatch
     ):
         # GH#20601
@@ -2226,6 +2240,9 @@ class TestStackUnstackMultiLevel:
                 # __init__ will raise the warning
                 super().__init__(*args, **kwargs)
                 raise Exception("Don't compute final result.")
+
+            def _make_selectors(self) -> None:
+                pass
 
         with monkeypatch.context() as m:
             m.setattr(reshape_lib, "_Unstacker", MockUnstacker)

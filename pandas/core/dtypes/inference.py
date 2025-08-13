@@ -6,7 +6,10 @@ from collections import abc
 from numbers import Number
 import re
 from re import Pattern
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    TypeGuard,
+)
 
 import numpy as np
 
@@ -14,8 +17,6 @@ from pandas._libs import lib
 
 if TYPE_CHECKING:
     from collections.abc import Hashable
-
-    from pandas._typing import TypeGuard
 
 is_bool = lib.is_bool
 
@@ -190,11 +191,16 @@ def is_re_compilable(obj: object) -> bool:
     Parameters
     ----------
     obj : The object to check
+        The object to check if the object can be compiled into a regex pattern instance.
 
     Returns
     -------
     bool
         Whether `obj` can be compiled as a regex pattern.
+
+    See Also
+    --------
+    api.types.is_re : Check if the object is a regex pattern instance.
 
     Examples
     --------

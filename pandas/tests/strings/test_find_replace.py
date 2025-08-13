@@ -293,23 +293,12 @@ def test_startswith_endswith_validate_na(any_string_dtype):
         dtype=any_string_dtype,
     )
 
-    dtype = ser.dtype
-    if (isinstance(dtype, pd.StringDtype)) or dtype == np.dtype("object"):
-        msg = "Allowing a non-bool 'na' in obj.str.startswith is deprecated"
-        with tm.assert_produces_warning(FutureWarning, match=msg):
-            ser.str.startswith("kapow", na="baz")
-        msg = "Allowing a non-bool 'na' in obj.str.endswith is deprecated"
-        with tm.assert_produces_warning(FutureWarning, match=msg):
-            ser.str.endswith("bar", na="baz")
-    else:
-        # TODO(infer_string): don't surface pyarrow errors
-        import pyarrow as pa
-
-        msg = "Could not convert 'baz' with type str: tried to convert to boolean"
-        with pytest.raises(pa.lib.ArrowInvalid, match=msg):
-            ser.str.startswith("kapow", na="baz")
-        with pytest.raises(pa.lib.ArrowInvalid, match=msg):
-            ser.str.endswith("kapow", na="baz")
+    msg = "Allowing a non-bool 'na' in obj.str.startswith is deprecated"
+    with tm.assert_produces_warning(FutureWarning, match=msg):
+        ser.str.startswith("kapow", na="baz")
+    msg = "Allowing a non-bool 'na' in obj.str.endswith is deprecated"
+    with tm.assert_produces_warning(FutureWarning, match=msg):
+        ser.str.endswith("bar", na="baz")
 
 
 @pytest.mark.parametrize("pat", ["foo", ("foo", "baz")])
@@ -1007,32 +996,35 @@ def test_find_nan(any_string_dtype):
     ser = Series(
         ["ABCDEFG", np.nan, "DEFGHIJEF", np.nan, "XXXX"], dtype=any_string_dtype
     )
-    expected_dtype = (
-        np.float64 if is_object_or_nan_string_dtype(any_string_dtype) else "Int64"
-    )
+    if is_object_or_nan_string_dtype(any_string_dtype):
+        expected_dtype = np.float64
+        item = np.nan
+    else:
+        expected_dtype = "Int64"
+        item = pd.NA
 
     result = ser.str.find("EF")
-    expected = Series([4, np.nan, 1, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, 1, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
     result = ser.str.rfind("EF")
-    expected = Series([4, np.nan, 7, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, 7, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
     result = ser.str.find("EF", 3)
-    expected = Series([4, np.nan, 7, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, 7, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
     result = ser.str.rfind("EF", 3)
-    expected = Series([4, np.nan, 7, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, 7, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
     result = ser.str.find("EF", 3, 6)
-    expected = Series([4, np.nan, -1, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, -1, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
     result = ser.str.rfind("EF", 3, 6)
-    expected = Series([4, np.nan, -1, np.nan, -1], dtype=expected_dtype)
+    expected = Series([4, item, -1, item, -1], dtype=expected_dtype)
     tm.assert_series_equal(result, expected)
 
 

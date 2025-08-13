@@ -4,6 +4,7 @@ import abc
 from typing import (
     TYPE_CHECKING,
     Literal,
+    Self,
 )
 
 from pandas._libs import lib
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     from pandas._typing import (
         NpDtype,
         Scalar,
-        Self,
     )
 
 
@@ -177,6 +177,10 @@ class BaseStringArrayMethods(abc.ABC):
 
     @abc.abstractmethod
     def _str_isalpha(self):
+        pass
+
+    @abc.abstractmethod
+    def _str_isascii(self):
         pass
 
     @abc.abstractmethod

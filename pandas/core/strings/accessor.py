@@ -12,6 +12,8 @@ import warnings
 
 import numpy as np
 
+from pandas._config import get_option
+
 from pandas._libs import lib
 from pandas._typing import (
     AlignJoin,
@@ -29,8 +31,10 @@ from pandas.core.dtypes.common import (
     is_extension_array_dtype,
     is_integer,
     is_list_like,
+    is_numeric_dtype,
     is_object_dtype,
     is_re,
+    is_string_dtype,
 )
 from pandas.core.dtypes.dtypes import (
     ArrowDtype,
@@ -180,7 +184,7 @@ class StringMethods(NoNewAttributesMixin):
     >>> s = pd.Series(["A_Str_Series"])
     >>> s
     0    A_Str_Series
-    dtype: object
+    dtype: str
 
     >>> s.str.split("_")
     0    [A, Str, Series]
@@ -188,7 +192,7 @@ class StringMethods(NoNewAttributesMixin):
 
     >>> s.str.replace("_", "")
     0    AStrSeries
-    dtype: object
+    dtype: str
     """
 
     # Note: see the docstring in pandas.core.strings.__init__
@@ -301,8 +305,6 @@ class StringMethods(NoNewAttributesMixin):
             if isinstance(result.dtype, ArrowDtype):
                 import pyarrow as pa
 
-                from pandas.compat import pa_version_under11p0
-
                 from pandas.core.arrays.arrow.array import ArrowExtensionArray
 
                 value_lengths = pa.compute.list_value_length(result._pa_array)
@@ -315,26 +317,14 @@ class StringMethods(NoNewAttributesMixin):
                     )
                 if min_len < max_len:
                     # append nulls to each scalar list element up to max_len
-                    if not pa_version_under11p0:
-                        result = ArrowExtensionArray(
-                            pa.compute.list_slice(
-                                result._pa_array,
-                                start=0,
-                                stop=max_len,
-                                return_fixed_size_list=True,
-                            )
+                    result = ArrowExtensionArray(
+                        pa.compute.list_slice(
+                            result._pa_array,
+                            start=0,
+                            stop=max_len,
+                            return_fixed_size_list=True,
                         )
-                    else:
-                        all_null = np.full(max_len, fill_value=None, dtype=object)
-                        values = result.to_numpy()
-                        new_values = []
-                        for row in values:
-                            if len(row) < max_len:
-                                nulls = all_null[: max_len - len(row)]
-                                row = np.append(row, nulls)
-                            new_values.append(row)
-                        pa_type = result._pa_array.type
-                        result = ArrowExtensionArray(pa.array(new_values, type=pa_type))
+                    )
                 if name is None:
                     name = range(max_len)
                 result = (
@@ -399,7 +389,9 @@ class StringMethods(NoNewAttributesMixin):
             # This is a mess.
             _dtype: DtypeObj | str | None = dtype
             vdtype = getattr(result, "dtype", None)
-            if self._is_string:
+            if _dtype is not None:
+                pass
+            elif self._is_string:
                 if is_bool_dtype(vdtype):
                     _dtype = result.dtype
                 elif returns_string:
@@ -568,7 +560,7 @@ class StringMethods(NoNewAttributesMixin):
         1    b,B
         2    NaN
         3    d,D
-        dtype: object
+        dtype: str
 
         Missing values will remain missing in the result, but can again be
         represented using `na_rep`
@@ -578,7 +570,7 @@ class StringMethods(NoNewAttributesMixin):
         1    b,B
         2    -,C
         3    d,D
-        dtype: object
+        dtype: str
 
         If `sep` is not specified, the values are concatenated without
         separation.
@@ -588,7 +580,7 @@ class StringMethods(NoNewAttributesMixin):
         1    bB
         2    -C
         3    dD
-        dtype: object
+        dtype: str
 
         Series with different indexes can be aligned before concatenation. The
         `join`-keyword works as in other methods.
@@ -599,7 +591,7 @@ class StringMethods(NoNewAttributesMixin):
         1    b-
         2    -c
         3    dd
-        dtype: object
+        dtype: str
         >>>
         >>> s.str.cat(t, join="outer", na_rep="-")
         0    aa
@@ -607,20 +599,20 @@ class StringMethods(NoNewAttributesMixin):
         2    -c
         3    dd
         4    -e
-        dtype: object
+        dtype: str
         >>>
         >>> s.str.cat(t, join="inner", na_rep="-")
         0    aa
         2    -c
         3    dd
-        dtype: object
+        dtype: str
         >>>
         >>> s.str.cat(t, join="right", na_rep="-")
         3    dd
         0    aa
         4    -e
         2    -c
-        dtype: object
+        dtype: str
 
         For more examples, see :ref:`here <text.concatenate>`.
         """
@@ -778,7 +770,7 @@ class StringMethods(NoNewAttributesMixin):
     0                       this is a regular sentence
     1    https://docs.python.org/3/tutorial/index.html
     2                                              NaN
-    dtype: object
+    dtype: str
 
     In the default setting, the string is split by whitespace.
 
@@ -825,17 +817,17 @@ class StringMethods(NoNewAttributesMixin):
     the columns during the split.
 
     >>> s.str.split(expand=True)
-                                                   0     1     2        3         4
-    0                                           this    is     a  regular  sentence
-    1  https://docs.python.org/3/tutorial/index.html  None  None     None      None
-    2                                            NaN   NaN   NaN      NaN       NaN
+                                                   0    1    2        3         4
+    0                                           this   is    a  regular  sentence
+    1  https://docs.python.org/3/tutorial/index.html  NaN  NaN      NaN       NaN
+    2                                            NaN  NaN  NaN      NaN       NaN
 
     For slightly more complex use cases like splitting the html document name
     from a url, a combination of parameter settings can be used.
 
     >>> s.str.rsplit("/", n=1, expand=True)
                                         0           1
-    0          this is a regular sentence        None
+    0          this is a regular sentence         NaN
     1  https://docs.python.org/3/tutorial  index.html
     2                                 NaN         NaN
     %(regex_examples)s"""
@@ -990,7 +982,7 @@ class StringMethods(NoNewAttributesMixin):
     >>> s
     0    Linda van der Berg
     1    George Pitt-Rivers
-    dtype: object
+    dtype: str
 
     >>> s.str.partition()
             0  1             2
@@ -1022,7 +1014,7 @@ class StringMethods(NoNewAttributesMixin):
 
     >>> idx = pd.Index(['X 123', 'Y 999'])
     >>> idx
-    Index(['X 123', 'Y 999'], dtype='object')
+    Index(['X 123', 'Y 999'], dtype='str')
 
     Which will create a MultiIndex:
 
@@ -1250,9 +1242,9 @@ class StringMethods(NoNewAttributesMixin):
             Flags to pass through to the re module, e.g. re.IGNORECASE.
         na : scalar, optional
             Fill value for missing values. The default depends on dtype of the
-            array. For object-dtype, ``numpy.nan`` is used. For the nullable
-            ``StringDtype``, ``pandas.NA`` is used. For the ``"str"`` dtype,
-            ``False`` is used.
+            array. For the ``"str"`` dtype, ``False`` is used. For object
+            dtype, ``numpy.nan`` is used. For the nullable ``StringDtype``,
+            ``pandas.NA`` is used.
         regex : bool, default True
             If True, assumes the pat is a regular expression.
 
@@ -1282,32 +1274,20 @@ class StringMethods(NoNewAttributesMixin):
         1     True
         2    False
         3    False
-        4      NaN
-        dtype: object
+        4    False
+        dtype: bool
 
         Returning an Index of booleans using only a literal pattern.
 
         >>> ind = pd.Index(["Mouse", "dog", "house and parrot", "23.0", np.nan])
         >>> ind.str.contains("23", regex=False)
-        Index([False, False, False, True, nan], dtype='object')
+        array([False, False, False,  True, False])
 
         Specifying case sensitivity using `case`.
 
         >>> s1.str.contains("oG", case=True, regex=True)
         0    False
         1    False
-        2    False
-        3    False
-        4      NaN
-        dtype: object
-
-        Specifying `na` to be `False` instead of `NaN` replaces NaN values
-        with `False`. If Series or Index does not contain NaN values
-        the resultant dtype will be `bool`, otherwise, an `object` dtype.
-
-        >>> s1.str.contains("og", na=False, regex=True)
-        0    False
-        1     True
         2    False
         3    False
         4    False
@@ -1320,8 +1300,8 @@ class StringMethods(NoNewAttributesMixin):
         1     True
         2     True
         3    False
-        4      NaN
-        dtype: object
+        4    False
+        dtype: bool
 
         Ignoring case sensitivity using `flags` with regex.
 
@@ -1331,8 +1311,8 @@ class StringMethods(NoNewAttributesMixin):
         1    False
         2     True
         3    False
-        4      NaN
-        dtype: object
+        4    False
+        dtype: bool
 
         Returning any digit using regular expression.
 
@@ -1341,8 +1321,8 @@ class StringMethods(NoNewAttributesMixin):
         1    False
         2    False
         3     True
-        4      NaN
-        dtype: object
+        4    False
+        dtype: bool
 
         Ensure `pat` is a not a literal pattern when `regex` is set to True.
         Note in the following example one might expect only `s2[1]` and `s2[3]` to
@@ -1374,6 +1354,11 @@ class StringMethods(NoNewAttributesMixin):
         """
         Determine if each string starts with a match of a regular expression.
 
+        Determines whether each string in the Series or Index starts with a
+        match to a specified regular expression. This function is especially
+        useful for validating prefixes, such as ensuring that codes, tags, or
+        identifiers begin with a specific pattern.
+
         Parameters
         ----------
         pat : str
@@ -1384,9 +1369,9 @@ class StringMethods(NoNewAttributesMixin):
             Regex module flags, e.g. re.IGNORECASE.
         na : scalar, optional
             Fill value for missing values. The default depends on dtype of the
-            array. For object-dtype, ``numpy.nan`` is used. For the nullable
-            ``StringDtype``, ``pandas.NA`` is used. For the ``"str"`` dtype,
-            ``False`` is used.
+            array. For the ``"str"`` dtype, ``False`` is used. For object
+            dtype, ``numpy.nan`` is used. For the nullable ``StringDtype``,
+            ``pandas.NA`` is used.
 
         Returns
         -------
@@ -1419,6 +1404,11 @@ class StringMethods(NoNewAttributesMixin):
         """
         Determine if each string entirely matches a regular expression.
 
+        Checks if each string in the Series or Index fully matches the
+        specified regular expression pattern. This function is useful when the
+        requirement is for an entire string to conform to a pattern, such as
+        validating formats like phone numbers or email addresses.
+
         Parameters
         ----------
         pat : str
@@ -1429,9 +1419,9 @@ class StringMethods(NoNewAttributesMixin):
             Regex module flags, e.g. re.IGNORECASE.
         na : scalar, optional
             Fill value for missing values. The default depends on dtype of the
-            array. For object-dtype, ``numpy.nan`` is used. For the nullable
-            ``StringDtype``, ``pandas.NA`` is used. For the ``"str"`` dtype,
-            ``False`` is used.
+            array. For the ``"str"`` dtype, ``False`` is used. For object
+            dtype, ``numpy.nan`` is used. For the nullable ``StringDtype``,
+            ``pandas.NA`` is used.
 
         Returns
         -------
@@ -1542,7 +1532,7 @@ class StringMethods(NoNewAttributesMixin):
         0    a
         1    b
         2    NaN
-        dtype: object
+        dtype: str
 
         When `pat` is a string and `regex` is True, the given `pat`
         is compiled as a regex. When `repl` is a string, it replaces matching
@@ -1553,7 +1543,7 @@ class StringMethods(NoNewAttributesMixin):
         0    bao
         1    baz
         2    NaN
-        dtype: object
+        dtype: str
 
         When `pat` is a string and `regex` is False, every `pat` is replaced with
         `repl` as with :meth:`str.replace`:
@@ -1562,7 +1552,7 @@ class StringMethods(NoNewAttributesMixin):
         0    bao
         1    fuz
         2    NaN
-        dtype: object
+        dtype: str
 
         When `repl` is a callable, it is called on every `pat` using
         :func:`re.sub`. The callable should expect one positional argument
@@ -1574,7 +1564,7 @@ class StringMethods(NoNewAttributesMixin):
         0    <re.Match object; span=(0, 1), match='f'>oo
         1    <re.Match object; span=(0, 1), match='f'>uz
         2                                            NaN
-        dtype: object
+        dtype: str
 
         Reverse every lowercase alphabetic word:
 
@@ -1584,7 +1574,7 @@ class StringMethods(NoNewAttributesMixin):
         0    oof 123
         1    rab zab
         2        NaN
-        dtype: object
+        dtype: str
 
         Using regex groups (extract second group and swap case):
 
@@ -1594,7 +1584,7 @@ class StringMethods(NoNewAttributesMixin):
         >>> ser.str.replace(pat, repl, regex=True)
         0    tWO
         1    bAR
-        dtype: object
+        dtype: str
 
         Using a compiled regex with flags
 
@@ -1604,7 +1594,7 @@ class StringMethods(NoNewAttributesMixin):
         0    foo
         1    bar
         2    NaN
-        dtype: object
+        dtype: str
         """
         if isinstance(pat, dict) and repl is not None:
             raise ValueError("repl cannot be used when pat is a dictionary")
@@ -1647,6 +1637,10 @@ class StringMethods(NoNewAttributesMixin):
         """
         Duplicate each string in the Series or Index.
 
+        Duplicates each string in the Series or Index, either by applying the
+        same repeat count to all elements or by using different repeat values
+        for each element.
+
         Parameters
         ----------
         repeats : int or sequence of int
@@ -1679,7 +1673,7 @@ class StringMethods(NoNewAttributesMixin):
         0    a
         1    b
         2    c
-        dtype: object
+        dtype: str
 
         Single int repeats string in Series
 
@@ -1687,7 +1681,7 @@ class StringMethods(NoNewAttributesMixin):
         0    aa
         1    bb
         2    cc
-        dtype: object
+        dtype: str
 
         Sequence of int repeats corresponding string in Series
 
@@ -1695,7 +1689,7 @@ class StringMethods(NoNewAttributesMixin):
         0      a
         1     bb
         2    ccc
-        dtype: object
+        dtype: str
         """
         result = self._data.array._str_repeat(repeats)
         return self._wrap_result(result)
@@ -1709,6 +1703,12 @@ class StringMethods(NoNewAttributesMixin):
     ):
         """
         Pad strings in the Series/Index up to width.
+
+        This function pads strings in a Series or Index to a specified width,
+        filling the extra space with a character of your choice. It provides
+        flexibility in positioning the padding, allowing it to be added to the
+        left, right, or both sides. This is useful for formatting strings to
+        align text or ensure consistent string lengths in data processing.
 
         Parameters
         ----------
@@ -1742,22 +1742,22 @@ class StringMethods(NoNewAttributesMixin):
         >>> s
         0    caribou
         1      tiger
-        dtype: object
+        dtype: str
 
         >>> s.str.pad(width=10)
         0       caribou
         1         tiger
-        dtype: object
+        dtype: str
 
         >>> s.str.pad(width=10, side="right", fillchar="-")
         0    caribou---
         1    tiger-----
-        dtype: object
+        dtype: str
 
         >>> s.str.pad(width=10, side="both", fillchar="-")
         0    -caribou--
         1    --tiger---
-        dtype: object
+        dtype: str
         """
         if not isinstance(fillchar, str):
             msg = f"fillchar must be a character, not {type(fillchar).__name__}"
@@ -1811,7 +1811,7 @@ class StringMethods(NoNewAttributesMixin):
     0   ..dog...
     1   ..bird..
     2   .mouse..
-    dtype: object
+    dtype: str
 
     For Series.str.ljust:
 
@@ -1820,7 +1820,7 @@ class StringMethods(NoNewAttributesMixin):
     0   dog.....
     1   bird....
     2   mouse...
-    dtype: object
+    dtype: str
 
     For Series.str.rjust:
 
@@ -1829,7 +1829,7 @@ class StringMethods(NoNewAttributesMixin):
     0   .....dog
     1   ....bird
     2   ...mouse
-    dtype: object
+    dtype: str
     """
 
     @Appender(_shared_docs["str_pad"] % {"side": "left and right", "method": "center"})
@@ -1920,6 +1920,11 @@ class StringMethods(NoNewAttributesMixin):
         """
         Slice substrings from each element in the Series or Index.
 
+        Slicing substrings from strings in a Series or Index helps extract
+        specific portions of data, making it easier to analyze or manipulate
+        text. This is useful for tasks like parsing structured text fields or
+        isolating parts of strings with a consistent format.
+
         Parameters
         ----------
         start : int, optional
@@ -1948,37 +1953,37 @@ class StringMethods(NoNewAttributesMixin):
         0        koala
         1          dog
         2    chameleon
-        dtype: object
+        dtype: str
 
         >>> s.str.slice(start=1)
         0        oala
         1          og
         2    hameleon
-        dtype: object
+        dtype: str
 
         >>> s.str.slice(start=-1)
         0           a
         1           g
         2           n
-        dtype: object
+        dtype: str
 
         >>> s.str.slice(stop=2)
         0    ko
         1    do
         2    ch
-        dtype: object
+        dtype: str
 
         >>> s.str.slice(step=2)
         0      kaa
         1       dg
         2    caeen
-        dtype: object
+        dtype: str
 
         >>> s.str.slice(start=0, stop=5, step=3)
         0    kl
         1     d
         2    cm
-        dtype: object
+        dtype: str
 
         Equivalent behaviour to:
 
@@ -1986,7 +1991,7 @@ class StringMethods(NoNewAttributesMixin):
         0    kl
         1     d
         2    cm
-        dtype: object
+        dtype: str
         """
         result = self._data.array._str_slice(start, stop, step)
         return self._wrap_result(result)
@@ -1995,6 +2000,11 @@ class StringMethods(NoNewAttributesMixin):
     def slice_replace(self, start=None, stop=None, repl=None):
         """
         Replace a positional slice of a string with another value.
+
+        This function allows replacing specific parts of a string in a Series
+        or Index by specifying start and stop positions. It is useful for
+        modifying substrings in a controlled way, such as updating sections of
+        text based on their positions or patterns.
 
         Parameters
         ----------
@@ -2028,7 +2038,7 @@ class StringMethods(NoNewAttributesMixin):
         2      abc
         3     abdc
         4    abcde
-        dtype: object
+        dtype: str
 
         Specify just `start`, meaning replace `start` until the end of the
         string with `repl`.
@@ -2039,7 +2049,7 @@ class StringMethods(NoNewAttributesMixin):
         2    aX
         3    aX
         4    aX
-        dtype: object
+        dtype: str
 
         Specify just `stop`, meaning the start of the string to `stop` is replaced
         with `repl`, and the rest of the string is included.
@@ -2050,7 +2060,7 @@ class StringMethods(NoNewAttributesMixin):
         2      Xc
         3     Xdc
         4    Xcde
-        dtype: object
+        dtype: str
 
         Specify `start` and `stop`, meaning the slice from `start` to `stop` is
         replaced with `repl`. Everything before or after `start` and `stop` is
@@ -2062,12 +2072,14 @@ class StringMethods(NoNewAttributesMixin):
         2      aX
         3     aXc
         4    aXde
-        dtype: object
+        dtype: str
         """
         result = self._data.array._str_slice_replace(start, stop, repl)
         return self._wrap_result(result)
 
-    def decode(self, encoding, errors: str = "strict"):
+    def decode(
+        self, encoding, errors: str = "strict", dtype: str | DtypeObj | None = None
+    ):
         """
         Decode character string in the Series/Index using indicated encoding.
 
@@ -2081,6 +2093,12 @@ class StringMethods(NoNewAttributesMixin):
         errors : str, optional
             Specifies the error handling scheme.
             Possible values are those supported by :meth:`bytes.decode`.
+        dtype : str or dtype, optional
+            The dtype of the result. When not ``None``, must be either a string or
+            object dtype. When ``None``, the dtype of the result is determined by
+            ``pd.options.future.infer_string``.
+
+            .. versionadded:: 2.3.0
 
         Returns
         -------
@@ -2100,8 +2118,12 @@ class StringMethods(NoNewAttributesMixin):
         0   cow
         1   123
         2   ()
-        dtype: object
+        dtype: str
         """
+        if dtype is not None and not is_string_dtype(dtype):
+            raise ValueError(f"dtype must be string or object, got {dtype=}")
+        if dtype is None and get_option("future.infer_string"):
+            dtype = "str"
         # TODO: Add a similar _bytes interface.
         if encoding in _cpython_optimized_decoders:
             # CPython optimized implementation
@@ -2110,9 +2132,8 @@ class StringMethods(NoNewAttributesMixin):
             decoder = codecs.getdecoder(encoding)
             f = lambda x: decoder(x, errors)[0]
         arr = self._data.array
-        # assert isinstance(arr, (StringArray,))
         result = arr._str_map(f)
-        return self._wrap_result(result)
+        return self._wrap_result(result, dtype=dtype)
 
     @forbid_nonstring_types(["bytes"])
     def encode(self, encoding, errors: str = "strict"):
@@ -2282,24 +2303,24 @@ class StringMethods(NoNewAttributesMixin):
     0    str_foo
     1    str_bar
     2    no_prefix
-    dtype: object
+    dtype: str
     >>> s.str.removeprefix("str_")
     0    foo
     1    bar
     2    no_prefix
-    dtype: object
+    dtype: str
 
     >>> s = pd.Series(["foo_str", "bar_str", "no_suffix"])
     >>> s
     0    foo_str
     1    bar_str
     2    no_suffix
-    dtype: object
+    dtype: str
     >>> s.str.removesuffix("_str")
     0    foo
     1    bar
     2    no_suffix
-    dtype: object
+    dtype: str
     """
 
     @Appender(
@@ -2425,7 +2446,7 @@ class StringMethods(NoNewAttributesMixin):
         >>> s.str.wrap(12)
         0             line to be\nwrapped
         1    another line\nto be\nwrapped
-        dtype: object
+        dtype: str
         """
         result = self._data.array._str_wrap(
             width=width,
@@ -2494,10 +2515,12 @@ class StringMethods(NoNewAttributesMixin):
         """
         from pandas.core.frame import DataFrame
 
+        if dtype is not None and not (is_numeric_dtype(dtype) or is_bool_dtype(dtype)):
+            raise ValueError("Only numeric or boolean dtypes are supported for 'dtype'")
         # we need to cast to Series of strings as only that has all
         # methods available for making the dummies...
         result, name = self._data.array._str_get_dummies(sep, dtype)
-        if is_extension_array_dtype(dtype) or isinstance(dtype, ArrowDtype):
+        if is_extension_array_dtype(dtype):
             return self._wrap_result(
                 DataFrame(result, columns=name, dtype=dtype),
                 name=name,
@@ -2548,7 +2571,7 @@ class StringMethods(NoNewAttributesMixin):
         >>> ser.str.translate(mytable)
         0   El nino
         1   Francoise
-        dtype: object
+        dtype: str
         """
         result = self._data.array._str_translate(table)
         dtype = object if self._data.dtype == "object" else None
@@ -2636,9 +2659,9 @@ class StringMethods(NoNewAttributesMixin):
             accepted.
         na : scalar, optional
             Object shown if element tested is not a string. The default depends
-            on dtype of the array. For object-dtype, ``numpy.nan`` is used.
-            For the nullable ``StringDtype``, ``pandas.NA`` is used.
-            For the ``"str"`` dtype, ``False`` is used.
+            on dtype of the array. For the ``"str"`` dtype, ``False`` is used.
+            For object dtype, ``numpy.nan`` is used. For the nullable
+            ``StringDtype``, ``pandas.NA`` is used.
 
         Returns
         -------
@@ -2660,27 +2683,18 @@ class StringMethods(NoNewAttributesMixin):
         1    Bear
         2     cat
         3     NaN
-        dtype: object
+        dtype: str
 
         >>> s.str.startswith("b")
         0     True
         1    False
         2    False
-        3      NaN
-        dtype: object
+        3    False
+        dtype: bool
 
         >>> s.str.startswith(("b", "B"))
         0     True
         1     True
-        2    False
-        3      NaN
-        dtype: object
-
-        Specifying `na` to be `False` instead of `NaN`.
-
-        >>> s.str.startswith("b", na=False)
-        0     True
-        1    False
         2    False
         3    False
         dtype: bool
@@ -2707,9 +2721,9 @@ class StringMethods(NoNewAttributesMixin):
             accepted.
         na : scalar, optional
             Object shown if element tested is not a string. The default depends
-            on dtype of the array. For object-dtype, ``numpy.nan`` is used.
-            For the nullable ``StringDtype``, ``pandas.NA`` is used.
-            For the ``"str"`` dtype, ``False`` is used.
+            on dtype of the array. For the ``"str"`` dtype, ``False`` is used.
+            For object dtype, ``numpy.nan`` is used. For the nullable
+            ``StringDtype``, ``pandas.NA`` is used.
 
         Returns
         -------
@@ -2731,28 +2745,19 @@ class StringMethods(NoNewAttributesMixin):
         1    bear
         2     caT
         3     NaN
-        dtype: object
+        dtype: str
 
         >>> s.str.endswith("t")
         0     True
         1    False
         2    False
-        3      NaN
-        dtype: object
+        3    False
+        dtype: bool
 
         >>> s.str.endswith(("t", "T"))
         0     True
         1    False
         2     True
-        3      NaN
-        dtype: object
-
-        Specifying `na` to be `False` instead of `NaN`.
-
-        >>> s.str.endswith("t", na=False)
-        0     True
-        1    False
-        2    False
         3    False
         dtype: bool
         """
@@ -2926,7 +2931,7 @@ class StringMethods(NoNewAttributesMixin):
         if expand=True.
 
         >>> s.str.extract(r"[ab](\d)", expand=True)
-            0
+             0
         0    1
         1    2
         2  NaN
@@ -2937,7 +2942,7 @@ class StringMethods(NoNewAttributesMixin):
         0      1
         1      2
         2    NaN
-        dtype: object
+        dtype: str
         """
         from pandas import DataFrame
 
@@ -3344,48 +3349,49 @@ class StringMethods(NoNewAttributesMixin):
     1              CAPITALS
     2    this is a sentence
     3              SwApCaSe
-    dtype: object
+    dtype: str
 
     >>> s.str.lower()
     0                 lower
     1              capitals
     2    this is a sentence
     3              swapcase
-    dtype: object
+    dtype: str
 
     >>> s.str.upper()
     0                 LOWER
     1              CAPITALS
     2    THIS IS A SENTENCE
     3              SWAPCASE
-    dtype: object
+    dtype: str
 
     >>> s.str.title()
     0                 Lower
     1              Capitals
     2    This Is A Sentence
     3              Swapcase
-    dtype: object
+    dtype: str
 
     >>> s.str.capitalize()
     0                 Lower
     1              Capitals
     2    This is a sentence
     3              Swapcase
-    dtype: object
+    dtype: str
 
     >>> s.str.swapcase()
     0                 LOWER
     1              capitals
     2    THIS IS A SENTENCE
     3              sWaPcAsE
-    dtype: object
+    dtype: str
     """
     # Types:
     #   cases:
     #       upper, lower, title, capitalize, swapcase, casefold
     #   boolean:
-    #     isalpha, isnumeric isalnum isdigit isdecimal isspace islower isupper istitle
+    #     isalpha, isnumeric isalnum isdigit isdecimal isspace islower
+    #     isupper istitle isascii
     # _doc_args holds dict of strings to use in substituting casemethod docs
     _doc_args: dict[str, dict[str, str]] = {}
     _doc_args["lower"] = {"type": "lowercase", "method": "lower", "version": ""}
@@ -3465,6 +3471,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3488,6 +3495,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3497,12 +3505,29 @@ class StringMethods(NoNewAttributesMixin):
     also includes other characters that can represent quantities such as
     unicode fractions.
 
-    >>> s1 = pd.Series(['one', 'one1', '1', ''])
+    >>> s1 = pd.Series(['one', 'one1', '1', '', '³', '⅕'])
     >>> s1.str.isnumeric()
     0    False
     1    False
     2     True
     3    False
+    4     True
+    5     True
+    dtype: bool
+
+    For a string to be considered numeric, all its characters must have a Unicode
+    numeric property matching :py:meth:`str.is_numeric`. As a consequence,
+    the following cases are **not** recognized as numeric:
+
+    - **Decimal numbers** (e.g., "1.1"): due to period ``"."``
+    - **Negative numbers** (e.g., "-5"):  due to minus sign ``"-"``
+    - **Scientific notation** (e.g., "1e3"): due to characters like ``"e"``
+
+    >>> s2 = pd.Series(["1.1", "-5", "1e3"])
+    >>> s2.str.isnumeric()
+    0    False
+    1    False
+    2    False
     dtype: bool
     """
     _shared_docs["isalnum"] = """
@@ -3514,6 +3539,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3546,6 +3572,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdigit : Check whether all characters are digits.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3571,6 +3598,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3582,7 +3610,7 @@ class StringMethods(NoNewAttributesMixin):
     >>> s3 = pd.Series(['23', '³', '⅕', ''])
     >>> s3.str.isdigit()
     0     True
-    1     True
+    1    False
     2    False
     3    False
     dtype: bool
@@ -3597,6 +3625,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdigit : Check whether all characters are digits.
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3619,6 +3648,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdigit : Check whether all characters are digits.
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
     Series.str.istitle : Check whether all characters are titlecase.
 
@@ -3644,6 +3674,7 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.istitle : Check whether all characters are titlecase.
 
     Examples
@@ -3667,10 +3698,11 @@ class StringMethods(NoNewAttributesMixin):
     Series.str.isdecimal : Check whether all characters are decimal.
     Series.str.isspace : Check whether all characters are whitespace.
     Series.str.islower : Check whether all characters are lowercase.
+    Series.str.isascii : Check whether all characters are ascii.
     Series.str.isupper : Check whether all characters are uppercase.
 
     Examples
-    ------------
+    --------
     The ``s5.str.istitle`` method checks for whether all words are in title
     case (whether only the first letter of each word is capitalized). Words are
     assumed to be as any sequence of non-numeric characters separated by
@@ -3684,11 +3716,40 @@ class StringMethods(NoNewAttributesMixin):
     3    False
     dtype: bool
     """
+    _shared_docs["isascii"] = """
+    See Also
+    --------
+    Series.str.isalpha : Check whether all characters are alphabetic.
+    Series.str.isnumeric : Check whether all characters are numeric.
+    Series.str.isalnum : Check whether all characters are alphanumeric.
+    Series.str.isdigit : Check whether all characters are digits.
+    Series.str.isdecimal : Check whether all characters are decimal.
+    Series.str.isspace : Check whether all characters are whitespace.
+    Series.str.islower : Check whether all characters are lowercase.
+    Series.str.istitle : Check whether all characters are titlecase.
+    Series.str.isupper : Check whether all characters are uppercase.
+
+    Examples
+    ------------
+    The ``s5.str.isascii`` method checks for whether all characters are ascii
+    characters, which includes digits 0-9, capital and lowercase letters A-Z,
+    and some other special characters.
+
+    >>> s5 = pd.Series(['ö', 'see123', 'hello world', ''])
+    >>> s5.str.isascii()
+    0    False
+    1     True
+    2     True
+    3     True
+    dtype: bool
+    """
+
     _doc_args["isalnum"] = {"type": "alphanumeric", "method": "isalnum"}
     _doc_args["isalpha"] = {"type": "alphabetic", "method": "isalpha"}
     _doc_args["isdigit"] = {"type": "digits", "method": "isdigit"}
     _doc_args["isspace"] = {"type": "whitespace", "method": "isspace"}
     _doc_args["islower"] = {"type": "lowercase", "method": "islower"}
+    _doc_args["isascii"] = {"type": "ascii", "method": "isascii"}
     _doc_args["isupper"] = {"type": "uppercase", "method": "isupper"}
     _doc_args["istitle"] = {"type": "titlecase", "method": "istitle"}
     _doc_args["isnumeric"] = {"type": "numeric", "method": "isnumeric"}
@@ -3719,6 +3780,11 @@ class StringMethods(NoNewAttributesMixin):
         "islower",
         docstring=_shared_docs["ismethods"] % _doc_args["islower"]
         + _shared_docs["islower"],
+    )
+    isascii = _map_and_wrap(
+        "isascii",
+        docstring=_shared_docs["ismethods"] % _doc_args["isascii"]
+        + _shared_docs["isascii"],
     )
     isupper = _map_and_wrap(
         "isupper",

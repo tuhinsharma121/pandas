@@ -15,6 +15,7 @@ from typing import (
     Any,
     ClassVar,
     Literal,
+    Self,
     cast,
     overload,
 )
@@ -95,7 +96,6 @@ if TYPE_CHECKING:
         NumpyValueArrayLike,
         PositionalIndexer,
         ScalarIndexer,
-        Self,
         SequenceIndexer,
         Shape,
         SortKind,
@@ -596,7 +596,7 @@ class ExtensionArray:
         if copy or na_value is not lib.no_default:
             result = result.copy()
         if na_value is not lib.no_default:
-            result[self.isna()] = na_value
+            result[self.isna()] = na_value  # type: ignore[index]
         return result
 
     # ------------------------------------------------------------------------
@@ -941,7 +941,7 @@ class ExtensionArray:
         --------
         >>> arr = pd.array([3, 1, 2, 5, 4])
         >>> arr.argmin()
-        1
+        np.int64(1)
         """
         # Implementer note: You have two places to override the behavior of
         # argmin.
@@ -975,7 +975,7 @@ class ExtensionArray:
         --------
         >>> arr = pd.array([3, 1, 2, 5, 4])
         >>> arr.argmax()
-        3
+        np.int64(3)
         """
         # Implementer note: You have two places to override the behavior of
         # argmax.
@@ -1688,13 +1688,13 @@ class ExtensionArray:
         >>> cat = pd.Categorical(['a', 'b', 'c'])
         >>> cat
         ['a', 'b', 'c']
-        Categories (3, object): ['a', 'b', 'c']
+        Categories (3, str): ['a', 'b', 'c']
         >>> cat.repeat(2)
         ['a', 'a', 'b', 'b', 'c', 'c']
-        Categories (3, object): ['a', 'b', 'c']
+        Categories (3, str): ['a', 'b', 'c']
         >>> cat.repeat([1, 2, 3])
         ['a', 'b', 'b', 'c', 'c', 'c']
-        Categories (3, object): ['a', 'b', 'c']
+        Categories (3, str): ['a', 'b', 'c']
         """
 
     @Substitution(klass="ExtensionArray")
@@ -1791,9 +1791,11 @@ class ExtensionArray:
                # type for the array, to the physical storage type for
                # the data, before passing to take.
 
-               result = take(data, indices, fill_value=fill_value, allow_fill=allow_fill)
+               result = take(
+                   data, indices, fill_value=fill_value, allow_fill=allow_fill
+               )
                return self._from_sequence(result, dtype=self.dtype)
-        """  # noqa: E501
+        """
         # Implementer note: The `fill_value` parameter should be a user-facing
         # value, an instance of self.dtype.type. When passed `fill_value=None`,
         # the default of `self.dtype.na_value` should be used.
@@ -1957,10 +1959,10 @@ class ExtensionArray:
         --------
         >>> class MyExtensionArray(pd.arrays.NumpyExtensionArray):
         ...     def _formatter(self, boxed=False):
-        ...         return lambda x: "*" + str(x) + "*" if boxed else repr(x) + "*"
+        ...         return lambda x: "*" + str(x) + "*"
         >>> MyExtensionArray(np.array([1, 2, 3, 4]))
         <MyExtensionArray>
-        [1*, 2*, 3*, 4*]
+        [*1*, *2*, *3*, *4*]
         Length: 4, dtype: int64
         """
         if boxed:
@@ -2174,15 +2176,15 @@ class ExtensionArray:
         Examples
         --------
         >>> pd.array([1, 2, 3])._reduce("min")
-        1
+        np.int64(1)
         >>> pd.array([1, 2, 3])._reduce("max")
-        3
+        np.int64(3)
         >>> pd.array([1, 2, 3])._reduce("sum")
-        6
+        np.int64(6)
         >>> pd.array([1, 2, 3])._reduce("mean")
-        2.0
+        np.float64(2.0)
         >>> pd.array([1, 2, 3])._reduce("median")
-        2.0
+        np.float64(2.0)
         """
         meth = getattr(self, name, None)
         if meth is None:
@@ -2509,8 +2511,9 @@ class ExtensionArray:
             Sorted, if possible.
         """
         # error: Incompatible return value type (got "Union[ExtensionArray,
-        # ndarray[Any, Any]]", expected "Self")
-        return mode(self, dropna=dropna)  # type: ignore[return-value]
+        # Tuple[np.ndarray, npt.NDArray[np.bool_]]", expected "Self")
+        result, _ = mode(self, dropna=dropna)
+        return result  # type: ignore[return-value]
 
     def __array_ufunc__(self, ufunc: np.ufunc, method: str, *inputs, **kwargs):
         if any(
@@ -2605,6 +2608,7 @@ class ExtensionArray:
         kind = WrappedCythonOp.get_kind_from_how(how)
         op = WrappedCythonOp(how=how, kind=kind, has_dropped_na=has_dropped_na)
 
+        initial: Any = 0
         # GH#43682
         if isinstance(self.dtype, StringDtype):
             # StringArray
@@ -2618,6 +2622,7 @@ class ExtensionArray:
                 "sem",
                 "var",
                 "skew",
+                "kurt",
             ]:
                 raise TypeError(
                     f"dtype '{self.dtype}' does not support operation '{how}'"
@@ -2625,7 +2630,16 @@ class ExtensionArray:
             if op.how not in ["any", "all"]:
                 # Fail early to avoid conversion to object
                 op._get_cython_function(op.kind, op.how, np.dtype(object), False)
-            npvalues = self.to_numpy(object, na_value=np.nan)
+
+            arr = self
+            if op.how == "sum":
+                initial = ""
+                # https://github.com/pandas-dev/pandas/issues/60229
+                # All NA should result in the empty string.
+                assert "skipna" in kwargs
+                if kwargs["skipna"] and min_count == 0:
+                    arr = arr.fillna("")
+            npvalues = arr.to_numpy(object, na_value=np.nan)
         else:
             raise NotImplementedError(
                 f"function is not implemented for this dtype: {self.dtype}"
@@ -2637,6 +2651,7 @@ class ExtensionArray:
             ngroups=ngroups,
             comp_ids=ids,
             mask=None,
+            initial=initial,
             **kwargs,
         )
 

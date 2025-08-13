@@ -3,6 +3,7 @@ import re
 import pytest
 
 from pandas._libs import lib
+from pandas.errors import Pandas4Warning
 
 import pandas as pd
 from pandas import (
@@ -244,6 +245,7 @@ class TestNumericOnly:
         ("quantile", True),
         ("sem", True),
         ("skew", True),
+        ("kurt", True),
         ("std", True),
         ("sum", True),
         ("var", True),
@@ -265,7 +267,7 @@ def test_numeric_only(kernel, has_arg, numeric_only, keys):
     if has_arg and numeric_only is True:
         # Cases where b does not appear in the result
         if kernel == "corrwith":
-            warn = FutureWarning
+            warn = Pandas4Warning
             msg = "DataFrameGroupBy.corrwith is deprecated"
         else:
             warn = None
@@ -278,14 +280,11 @@ def test_numeric_only(kernel, has_arg, numeric_only, keys):
         kernel in ("first", "last")
         or (
             # kernels that work on any dtype and don't have numeric_only arg
-            kernel in ("any", "all", "bfill", "ffill", "fillna", "nth", "nunique")
+            kernel in ("any", "all", "bfill", "ffill", "nth", "nunique")
             and numeric_only is lib.no_default
         )
     ):
-        warn = FutureWarning if kernel == "fillna" else None
-        msg = "DataFrameGroupBy.fillna is deprecated"
-        with tm.assert_produces_warning(warn, match=msg):
-            result = method(*args, **kwargs)
+        result = method(*args, **kwargs)
         assert "b" in result.columns
     elif has_arg:
         assert numeric_only is not True
@@ -313,7 +312,7 @@ def test_numeric_only(kernel, has_arg, numeric_only, keys):
             msg = "'>' not supported between instances of 'type' and 'type'"
         with pytest.raises(exception, match=msg):
             if kernel == "corrwith":
-                warn = FutureWarning
+                warn = Pandas4Warning
                 msg = "DataFrameGroupBy.corrwith is deprecated"
             else:
                 warn = None
@@ -381,6 +380,7 @@ def test_deprecate_numeric_only_series(dtype, groupby_func, request):
         "max",
         "prod",
         "skew",
+        "kurt",
     )
 
     # Test default behavior; kernels that fail may be enabled in the future but kernels
@@ -410,6 +410,7 @@ def test_deprecate_numeric_only_series(dtype, groupby_func, request):
         "quantile",
         "sem",
         "skew",
+        "kurt",
         "std",
         "sum",
         "var",

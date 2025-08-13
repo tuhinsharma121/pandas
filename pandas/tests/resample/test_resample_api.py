@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from pandas._libs import lib
+from pandas._libs.tslibs import Day
 
 import pandas as pd
 from pandas import (
@@ -76,9 +77,7 @@ def test_groupby_resample_api():
     )
     index = pd.MultiIndex.from_arrays([[1] * 8 + [2] * 8, i], names=["group", "date"])
     expected = DataFrame({"val": [5] * 7 + [6] + [7] * 7 + [8]}, index=index)
-    msg = "DataFrameGroupBy.apply operated on the grouping columns"
-    with tm.assert_produces_warning(DeprecationWarning, match=msg):
-        result = df.groupby("group").apply(lambda x: x.resample("1D").ffill())[["val"]]
+    result = df.groupby("group").apply(lambda x: x.resample("1D").ffill())[["val"]]
     tm.assert_frame_equal(result, expected)
 
 
@@ -753,6 +752,7 @@ def test_resample_agg_readonly():
     rs = ser.resample("1D")
 
     expected = Series([pd.Timestamp(0), pd.Timestamp(0)], index=index[::24])
+    expected.index.freq = Day(1)  # GH#41943 no longer equivalent to 24h
 
     result = rs.agg("last")
     tm.assert_series_equal(result, expected)

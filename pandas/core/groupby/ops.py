@@ -12,6 +12,7 @@ import collections
 import functools
 from typing import (
     TYPE_CHECKING,
+    Any,
     Generic,
     final,
 )
@@ -43,6 +44,7 @@ from pandas.core.dtypes.common import (
     ensure_platform_int,
     ensure_uint64,
     is_1d_only_ea_dtype,
+    is_string_dtype,
 )
 from pandas.core.dtypes.missing import (
     isna,
@@ -50,6 +52,7 @@ from pandas.core.dtypes.missing import (
 )
 
 from pandas.core.arrays import Categorical
+from pandas.core.arrays.arrow.array import ArrowExtensionArray
 from pandas.core.frame import DataFrame
 from pandas.core.groupby import grouper
 from pandas.core.indexes.api import (
@@ -144,6 +147,7 @@ class WrappedCythonOp:
             "std": functools.partial(libgroupby.group_var, name="std"),
             "sem": functools.partial(libgroupby.group_var, name="sem"),
             "skew": "group_skew",
+            "kurt": "group_kurt",
             "first": "group_nth",
             "last": "group_last",
             "ohlc": "group_ohlc",
@@ -193,7 +197,7 @@ class WrappedCythonOp:
             elif how in ["std", "sem", "idxmin", "idxmax"]:
                 # We have a partial object that does not have __signatures__
                 return f
-            elif how == "skew":
+            elif how in ["skew", "kurt"]:
                 # _get_cython_vals will convert to float64
                 pass
             elif "object" not in f.__signatures__:
@@ -224,7 +228,7 @@ class WrappedCythonOp:
         """
         how = self.how
 
-        if how in ["median", "std", "sem", "skew"]:
+        if how in ["median", "std", "sem", "skew", "kurt"]:
             # median only has a float64 implementation
             # We should only get here with is_numeric, as non-numeric cases
             #  should raise in _get_cython_function
@@ -318,6 +322,7 @@ class WrappedCythonOp:
         comp_ids: np.ndarray,
         mask: npt.NDArray[np.bool_] | None = None,
         result_mask: npt.NDArray[np.bool_] | None = None,
+        initial: Any = 0,
         **kwargs,
     ) -> np.ndarray:
         if values.ndim == 1:
@@ -334,6 +339,7 @@ class WrappedCythonOp:
                 comp_ids=comp_ids,
                 mask=mask,
                 result_mask=result_mask,
+                initial=initial,
                 **kwargs,
             )
             if res.shape[0] == 1:
@@ -349,6 +355,7 @@ class WrappedCythonOp:
             comp_ids=comp_ids,
             mask=mask,
             result_mask=result_mask,
+            initial=initial,
             **kwargs,
         )
 
@@ -362,6 +369,7 @@ class WrappedCythonOp:
         comp_ids: np.ndarray,
         mask: npt.NDArray[np.bool_] | None,
         result_mask: npt.NDArray[np.bool_] | None,
+        initial: Any = 0,
         **kwargs,
     ) -> np.ndarray:  # np.ndarray[ndim=2]
         orig_values = values
@@ -419,6 +427,10 @@ class WrappedCythonOp:
                 "sum",
                 "median",
             ]:
+                if self.how == "sum":
+                    # pass in through kwargs only for sum (other functions don't have
+                    # the keyword)
+                    kwargs["initial"] = initial
                 func(
                     out=result,
                     counts=counts,
@@ -453,7 +465,7 @@ class WrappedCythonOp:
                     **kwargs,
                 )
                 result = result.astype(bool, copy=False)
-            elif self.how in ["skew"]:
+            elif self.how in ["skew", "kurt"]:
                 func(
                     out=result,
                     counts=counts,
@@ -953,18 +965,26 @@ class BaseGrouper:
         -------
         np.ndarray or ExtensionArray
         """
+        result = self._aggregate_series_pure_python(obj, func)
+        npvalues = lib.maybe_convert_objects(result, try_float=False)
 
-        if not isinstance(obj._values, np.ndarray):
+        if isinstance(obj._values, ArrowExtensionArray):
+            # When obj.dtype is a string, any object can be cast. Only do so if the
+            # UDF returned strings or NA values.
+            if not is_string_dtype(obj.dtype) or lib.is_string_array(
+                npvalues, skipna=True
+            ):
+                out = maybe_cast_pointwise_result(
+                    npvalues, obj.dtype, numeric_only=True, same_dtype=preserve_dtype
+                )
+            else:
+                out = npvalues
+
+        elif not isinstance(obj._values, np.ndarray):
             # we can preserve a little bit more aggressively with EA dtype
             #  because maybe_cast_pointwise_result will do a try/except
             #  with _from_sequence.  NB we are assuming here that _from_sequence
             #  is sufficiently strict that it casts appropriately.
-            preserve_dtype = True
-
-        result = self._aggregate_series_pure_python(obj, func)
-
-        npvalues = lib.maybe_convert_objects(result, try_float=False)
-        if preserve_dtype:
             out = maybe_cast_pointwise_result(npvalues, obj.dtype, numeric_only=True)
         else:
             out = npvalues
@@ -1021,6 +1041,7 @@ class BaseGrouper:
         # getattr pattern for __name__ is needed for functools.partial objects
         if len(group_keys) == 0 and getattr(f, "__name__", None) in [
             "skew",
+            "kurt",
             "sum",
             "prod",
         ]:
@@ -1129,7 +1150,7 @@ class BinGrouper(BaseGrouper):
         """
         slicer = lambda start, edge: data.iloc[start:edge]
 
-        start = 0
+        start: np.int64 | int = 0
         for edge, label in zip(self.bins, self.binlabels):
             if label is not NaT:
                 yield label, slicer(start, edge)
@@ -1142,7 +1163,7 @@ class BinGrouper(BaseGrouper):
     def indices(self):
         indices = collections.defaultdict(list)
 
-        i = 0
+        i: np.int64 | int = 0
         for label, bin in zip(self.binlabels, self.bins):
             if i < bin:
                 if label is not NaT:

@@ -90,8 +90,6 @@ def as_json_table_type(x: DtypeObj) -> str:
         return "datetime"
     elif lib.is_np_dtype(x, "m"):
         return "duration"
-    elif isinstance(x, ExtensionDtype):
-        return "any"
     elif is_string_dtype(x):
         return "string"
     else:
@@ -185,7 +183,7 @@ def convert_json_field_to_pandas_type(field) -> str | CategoricalDtype:
     ...         "ordered": True,
     ...     }
     ... )
-    CategoricalDtype(categories=['a', 'b', 'c'], ordered=True, categories_dtype=object)
+    CategoricalDtype(categories=['a', 'b', 'c'], ordered=True, categories_dtype=str)
 
     >>> convert_json_field_to_pandas_type({"name": "a_datetime", "type": "datetime"})
     'datetime64[ns]'
@@ -197,7 +195,7 @@ def convert_json_field_to_pandas_type(field) -> str | CategoricalDtype:
     """
     typ = field["type"]
     if typ == "string":
-        return "object"
+        return field.get("extDtype", None)
     elif typ == "integer":
         return field.get("extDtype", "int64")
     elif typ == "number":
@@ -239,9 +237,16 @@ def build_table_schema(
     """
     Create a Table schema from ``data``.
 
+    This method is a utility to generate a JSON-serializable schema
+    representation of a pandas Series or DataFrame, compatible with the
+    Table Schema specification. It enables structured data to be shared
+    and validated in various applications, ensuring consistency and
+    interoperability.
+
     Parameters
     ----------
-    data : Series, DataFrame
+    data : Series or DataFrame
+        The input data for which the table schema is to be created.
     index : bool, default True
         Whether to include ``data.index`` in the schema.
     primary_key : bool or None, default True
@@ -256,6 +261,12 @@ def build_table_schema(
     Returns
     -------
     dict
+        A dictionary representing the Table schema.
+
+    See Also
+    --------
+    DataFrame.to_json : Convert the object to a JSON string.
+    read_json : Convert a JSON string to pandas object.
 
     Notes
     -----
@@ -281,7 +292,7 @@ def build_table_schema(
     {'fields': \
 [{'name': 'idx', 'type': 'integer'}, \
 {'name': 'A', 'type': 'integer'}, \
-{'name': 'B', 'type': 'string'}, \
+{'name': 'B', 'type': 'string', 'extDtype': 'str'}, \
 {'name': 'C', 'type': 'datetime'}], \
 'primaryKey': ['idx'], \
 'pandas_version': '1.4.0'}
